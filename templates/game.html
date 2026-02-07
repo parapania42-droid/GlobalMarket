@@ -1,54 +1,6 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Market - Oyun</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <!-- HUD / TOP PANEL -->
-    <div class="hud">
-        <div class="container hud-content">
-            <div class="hud-group">
-                <div class="hud-item" data-tip="Kullanıcı adınız">
-                    <span class="hud-label">Oyuncu</span>
-                    <span class="hud-value" id="hud-username">-</span>
-                </div>
-                <div class="hud-item" data-tip="Mevcut bakiyeniz">
-                    <span class="hud-label">Para</span>
-                    <span class="hud-value" id="hud-money">0 TL</span>
-                </div>
-            </div>
-            
-            <div class="hud-group">
-                <div class="hud-item" data-tip="Mevcut seviyeniz">
-                    <span class="hud-label">Seviye</span>
-                    <span class="hud-value" id="hud-level">1</span>
-                </div>
-                <div class="hud-item" style="min-width: 140px;" data-tip="Deneyim puanınız ve ilerleme">
-                    <span class="hud-label">XP</span>
-                    <div class="xp-bar-bg">
-                        <div class="xp-bar-fill" id="hud-xp-bar" style="width:0%"></div>
-                    </div>
-                    <span class="hud-value-small" id="hud-xp">0 / 1000</span>
-                </div>
-                <div class="hud-item" data-tip="Üretim bonuslarınız (ör. hızlandırma)">
-                    <span class="hud-label">Bonus</span>
-                    <span class="hud-value" id="hud-bonus">Yok</span>
-                </div>
-            </div>
+{% extends "base.html" %}
 
-            <div class="hud-group" style="flex-grow:1; justify-content:flex-end;">
-                <button id="daily-bonus-btn" class="btn btn-sm btn-warning" onclick="claimDailyBonus()" style="display:none; margin-right:5px;">🎁 GÜNLÜK ÖDÜL</button>
-                <a href="/tutorial" class="btn btn-sm btn-info">❓ Rehber</a>
-                <a href="/admin" id="admin-btn" class="btn btn-sm btn-danger" style="display:none;">ADMIN</a>
-                <a href="/leaderboard" class="btn btn-sm btn-secondary">🏆 Liderlik</a>
-                <a href="/logout" class="btn btn-sm btn-secondary">Çıkış</a>
-            </div>
-        </div>
-    </div>
-
+{% block content %}
     <!-- Mini-Event Popup -->
     <div id="event-popup" class="event-popup" style="display:none;">
         <div class="event-content">
@@ -61,7 +13,16 @@
         </div>
     </div>
 
-    <div class="container main-game-area">
+    <!-- HUD was moved to base.html -->
+    <!-- We add an ID to this container so main.js knows it's the game page? 
+         Actually main.js checks window.location.pathname.
+         But for rendering, we need the containers.
+    -->
+    <div class="container main-game-area" id="game-page-container">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+             <button id="daily-bonus-btn" class="btn btn-sm btn-warning" onclick="claimDailyBonus()" style="display:none;">🎁 GÜNLÜK ÖDÜL</button>
+        </div>
+
         <!-- AFK Uyarısı -->
         <div id="active-status" style="display:none; background:var(--danger); color:white; padding:10px; border-radius:5px; margin-bottom:15px; text-align:center; font-weight:bold; animation:pulse 1s infinite;"></div>
         
@@ -72,7 +33,7 @@
 
         <div class="game-grid">
             <!-- SOL KOLON: PAZAR -->
-            <div class="column-market">
+            <div class="column-market" id="market">
                 <div class="card">
                     <div class="card-header">
                         <h2>🛒 Canlı Pazar</h2>
@@ -155,7 +116,7 @@
             </div>
 
             <!-- SAĞ KOLON: FABRİKALAR -->
-            <div class="column-factories">
+            <div class="column-factories" id="factories">
                 <div class="card">
                     <h3>🏭 Fabrikalarım</h3>
                     <p class="hint-text">Depo dolmadan toplamayı unutma!</p>
@@ -226,7 +187,4 @@
             </div>
         </div>
     </div>
-
-    <script src="/static/js/main.js"></script>
-</body>
-</html>
+{% endblock %}

@@ -243,7 +243,7 @@ function renderHUD(player) {
     }
 
     // Admin Button
-    const adminBtn = document.getElementById('admin-btn');
+    const adminBtn = document.getElementById('nav-admin-btn');
     if (adminBtn) adminBtn.style.display = player.is_admin ? 'inline-block' : 'none';
 }
 

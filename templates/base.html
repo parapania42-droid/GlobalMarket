@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Global Market</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- FIXED HEADER (HUD) -->
+    <div class="hud">
+        <div class="container hud-content">
+            <div class="hud-group">
+                <div class="hud-item">
+                    <span class="hud-label">Oyuncu</span>
+                    <span class="hud-value" id="hud-username">-</span>
+                </div>
+                <div class="hud-item">
+                    <span class="hud-label">Para</span>
+                    <span class="hud-value" id="hud-money">0 TL</span>
+                </div>
+            </div>
+            
+            <div class="hud-group">
+                <div class="hud-item">
+                    <span class="hud-label">Seviye</span>
+                    <span class="hud-value" id="hud-level">1</span>
+                </div>
+                <div class="hud-item" style="min-width: 100px;">
+                    <span class="hud-label">XP</span>
+                    <div class="xp-bar-bg">
+                        <div class="xp-bar-fill" id="hud-xp-bar" style="width:0%"></div>
+                    </div>
+                    <span class="hud-value-small" id="hud-xp">0/0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- FIXED BOTTOM NAVIGATION -->
+    <nav class="bottom-nav">
+        <a href="/game" class="nav-item {% if active_page == 'game' %}active{% endif %}">
+            <i class="fas fa-home"></i>
+            <span>Ana Sayfa</span>
+        </a>
+        <a href="/game#factories" class="nav-item">
+            <i class="fas fa-industry"></i>
+            <span>Fabrika</span>
+        </a>
+        <a href="/game#market" class="nav-item">
+            <i class="fas fa-shopping-cart"></i>
+            <span>Market</span>
+        </a>
+        <a href="/leaderboard" class="nav-item {% if active_page == 'leaderboard' %}active{% endif %}">
+            <i class="fas fa-trophy"></i>
+            <span>Liderlik</span>
+        </a>
+        <a href="/guide" class="nav-item {% if active_page == 'guide' %}active{% endif %}">
+            <i class="fas fa-book"></i>
+            <span>Rehber</span>
+        </a>
+        <a href="/admin" id="nav-admin-btn" class="nav-item {% if active_page == 'admin' %}active{% endif %}" style="display:none; color: var(--danger);">
+            <i class="fas fa-user-shield"></i>
+            <span>Admin</span>
+        </a>
+    </nav>
+
+    <script src="/static/js/main.js"></script>
+    <script>
+        // Check active page to highlight nav
+        // Also check if admin to show admin button (backup to main.js)
+    </script>
+</body>
+</html>

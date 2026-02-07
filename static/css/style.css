@@ -88,6 +88,44 @@ body {
     transition: width 0.3s ease;
 }
 
+/* --- BOTTOM NAV --- */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #151515;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+    z-index: 1000;
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 0.8em;
+    transition: color 0.2s;
+}
+
+.nav-item i {
+    font-size: 1.4em;
+    margin-bottom: 4px;
+}
+
+.nav-item.active {
+    color: var(--primary);
+}
+
+.nav-item:hover {
+    color: var(--text-main);
+}
+
 /* --- CONTAINER & LAYOUT --- */
 .container {
     max-width: 1200px;
@@ -97,7 +135,7 @@ body {
 
 .main-game-area {
     margin-top: 90px;
-    padding-bottom: 100px; /* Space for chat */
+    padding-bottom: 100px; /* Space for bottom nav and chat */
 }
 
 .game-grid {

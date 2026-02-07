@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container" style="padding-top: 20px;">
+    <div class="card">
+        <div class="card-header">
+            <h2>📚 Oyun Rehberi</h2>
+        </div>
+        <div style="line-height: 1.6;">
+            <h3>💰 Nasıl Para Kazanırım?</h3>
+            <p>
+                <strong>1. Üretim Yap:</strong> Fabrikalar kurarak hammadde (Odun, Taş, Demir vb.) üret.
+                Depoların dolmadan toplamayı unutma! Topladığın ürünleri envanterine eklenir.
+            </p>
+            <p>
+                <strong>2. Ticaret Yap:</strong> Ürettiğin ürünleri "Satış Yap" panelinden pazara koyabilirsin.
+                Ayrıca pazardaki ucuz ürünleri alıp daha pahalıya satabilirsin (Trade).
+            </p>
+            <p>
+                <strong>3. Lojistik Seferleri:</strong> Lojistik merkezinden tır göndererek belirli bir süre sonunda para kazanabilirsin.
+            </p>
+            <p>
+                <strong>4. Günlük Ödül:</strong> Her gün oyuna girerek "Günlük Ödül" butonundan para ve XP al.
+            </p>
+
+            <hr style="border-color: #333; margin: 20px 0;">
+
+            <h3>🏭 Fabrikalar ve Seviye</h3>
+            <p>
+                Seviye atladıkça yeni fabrikaların kilidi açılır.
+                <ul>
+                    <li><strong>Seviye 1:</strong> Kereste Fabrikası (Odun)</li>
+                    <li><strong>Seviye 2:</strong> Taş Ocağı (Taş)</li>
+                    <li><strong>Seviye 3:</strong> Demir Madeni (Demir)</li>
+                    <li><strong>Seviye 5:</strong> Altın Madeni (Altın)</li>
+                    <li><strong>Seviye 10:</strong> Elmas Madeni (Elmas)</li>
+                    <li><strong>Seviye 15:</strong> Petrol Rafinerisi (Petrol)</li>
+                    <li><strong>Seviye 20:</strong> Çelik Fabrikası (Çelik)</li>
+                </ul>
+                XP kazanmak için fabrika ürünlerini topla veya günlük ödülü al.
+            </p>
+
+            <hr style="border-color: #333; margin: 20px 0;">
+
+            <h3>📈 Pazar Sistemi</h3>
+            <p>
+                Pazar tamamen oyuncular arasıdır (Serbest Piyasa). Fiyatları siz belirlersiniz.
+                Ekonomik etkinlikler (Resesyon, Boom vb.) piyasayı etkileyebilir.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,203 +1,125 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Market - Admin Paneli</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="hud" style="background: #220000; border-bottom: 2px solid red;">
-        <div class="container hud-content">
-            <div class="hud-item">
-                <span class="hud-label" style="color:red">YÖNETİCİ MODU</span>
-                <span class="hud-value">Paramen42</span>
-            </div>
-            <div class="hud-item" style="flex-grow:1; text-align:right;">
-                <a href="/game" class="btn btn-sm btn-secondary">Oyuna Dön</a>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container" style="padding-top: 20px;">
+    <div class="card">
+        <div class="card-header">
+            <h2>🛡️ Admin Paneli</h2>
+            <div style="font-size: 0.9em; color: var(--text-muted);">
+                Kullanıcı: <span style="color: var(--danger);">{{ session.username }}</span>
             </div>
         </div>
-    </div>
 
-    <div class="container" style="margin-top: 80px;">
-        <div class="card">
-            <h2>🔴 Yönetim Paneli</h2>
-            
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
-                <div style="background:rgba(0,0,0,0.2); padding:15px; border-radius:8px;">
-                    <h3>Sistem Duyurusu</h3>
-                    <input type="text" id="broadcast-msg" placeholder="Mesajınız..." style="width:100%; margin-bottom:10px;">
-                    <button class="btn btn-danger" onclick="adminAction('broadcast')">YAYINLA</button>
+        <div class="game-grid" style="grid-template-columns: 1fr 1fr;">
+            <!-- İstatistikler -->
+            <div class="card" style="background: #252525;">
+                <h3>📊 Sistem İstatistikleri</h3>
+                <ul style="list-style: none; padding: 0; margin-top: 10px;">
+                    <li>Toplam Kullanıcı: <strong>{{ stats.total_users }}</strong></li>
+                    <li>Toplam Para: <strong>{{ stats.total_money }} TL</strong></li>
+                    <li>Toplam Pazar İlanı: <strong>{{ stats.market_listings }}</strong></li>
+                </ul>
+            </div>
+
+            <!-- Kullanıcı İşlemleri Formu -->
+            <div class="card" style="background: #252525;">
+                <h3>🔧 Kullanıcı Yönetimi</h3>
+                <div class="input-group">
+                    <input type="text" id="admin-target-user" placeholder="Kullanıcı Adı" class="form-input">
+                    <button class="btn btn-info" onclick="adminSearchUser()">ARA</button>
                 </div>
-                <div style="background:rgba(0,0,0,0.2); padding:15px; border-radius:8px;">
-                    <h3>Ekonomi Yönetimi</h3>
-                    <div id="economy-stats" style="margin-bottom:10px;">Yükleniyor...</div>
-                    <hr style="border-color:#444">
-                    <h4>Ürün Fiyatları (Base)</h4>
-                    <div style="margin-bottom:10px; display:flex; gap:5px;">
-                        <input type="text" id="new-item-key" placeholder="Kod (örn: bakir)" style="width:30%" class="form-input">
-                        <input type="text" id="new-item-name" placeholder="İsim" style="width:30%" class="form-input">
-                        <input type="number" id="new-item-price" placeholder="Fiyat" style="width:20%" class="form-input">
-                        <button class="btn btn-xs btn-success" onclick="addItem()">EKLE</button>
+                
+                <div id="admin-actions" style="display:none; margin-top:15px; border-top:1px solid #444; padding-top:10px;">
+                    <div style="margin-bottom:10px;">
+                        <strong>İşlem Yapılacak: <span id="target-display" style="color:var(--info)">-</span></strong>
                     </div>
-                    <div id="admin-items-list" style="max-height:150px; overflow-y:auto; font-size:0.9em;">
-                        <!-- JS ile dolacak -->
+                    
+                    <div class="input-group" style="margin-bottom:5px;">
+                        <input type="number" id="admin-amount" placeholder="Miktar (Para/XP/Level)" class="form-input">
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                        <button class="btn btn-success btn-sm" onclick="adminAction('add_money')">💰 Para Ekle</button>
+                        <button class="btn btn-warning btn-sm" onclick="adminAction('remove_money')">💸 Para Sil</button>
+                        <button class="btn btn-primary btn-sm" onclick="adminAction('set_level')">⭐ Level Ayarla</button>
+                        <button class="btn btn-danger btn-sm" onclick="adminAction('ban_user')">🚫 BANLA</button>
+                        <button class="btn btn-secondary btn-sm" onclick="adminAction('unban_user')">✅ BAN AÇ</button>
+                        <button class="btn btn-danger btn-sm" style="grid-column: span 2;" onclick="adminAction('delete_user')">🗑️ HESABI SİL</button>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <h3>👤 Kullanıcılar</h3>
-            <div style="overflow-x:auto;">
-                <table style="width:100%; text-align:left;">
+        <!-- Kullanıcı Listesi -->
+        <div class="card" style="margin-top: 20px;">
+            <h3>👥 Tüm Kullanıcılar</h3>
+            <div style="max-height: 400px; overflow-y: auto;">
+                <table style="width: 100%; border-collapse: collapse;">
                     <thead>
-                        <tr>
-                            <th>Kullanıcı</th>
+                        <tr style="text-align: left; border-bottom: 1px solid #444;">
+                            <th style="padding: 10px;">Kullanıcı</th>
                             <th>Para</th>
-                            <th>Seviye</th>
-                            <th>Son Aktif</th>
+                            <th>Level</th>
                             <th>Durum</th>
-                            <th>İşlemler</th>
                         </tr>
                     </thead>
-                    <tbody id="user-list">
-                        <!-- JS ile dolacak -->
+                    <tbody id="user-list-body">
+                        <!-- JS ile doldurulacak veya server side render -->
+                        {% for u in users %}
+                        <tr style="border-bottom: 1px solid #333;">
+                            <td style="padding: 10px;">{{ u.username }}</td>
+                            <td>{{ u.money }}</td>
+                            <td>{{ u.level }}</td>
+                            <td>
+                                {% if u.is_banned %}
+                                <span style="color: var(--danger)">YASAKLI</span>
+                                {% else %}
+                                <span style="color: var(--success)">Aktif</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
+</div>
 
-    <script src="/static/js/main.js"></script>
-    <script>
-        // Inline Admin Script for simplicity
-        async function loadAdminStats() {
-            const res = await fetch('/api/admin/stats');
-            if (!res.ok) {
-                window.location.href = '/game';
-                return;
-            }
+<script>
+async function adminSearchUser() {
+    const username = document.getElementById('admin-target-user').value;
+    if(!username) return alert("Kullanıcı adı girin");
+    
+    // Basitçe UI'ı açalım, gerçek kontrol server'da olacak işlem sırasında
+    document.getElementById('admin-actions').style.display = 'block';
+    document.getElementById('target-display').textContent = username;
+}
+
+async function adminAction(action) {
+    const username = document.getElementById('admin-target-user').value;
+    const amount = document.getElementById('admin-amount').value;
+    
+    if(!username) return alert("Kullanıcı seçilmedi!");
+    
+    if (confirm(`${username} üzerinde ${action} işlemi yapılacak. Emin misin?`)) {
+        try {
+            const res = await fetch('/api/admin/action', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: username,
+                    action: action,
+                    amount: amount
+                })
+            });
             const data = await res.json();
-            
-            // Economy
-            document.getElementById('economy-stats').innerHTML = `
-                Pazar İlanları: ${data.market_count}<br>
-                Çarpan: x${data.economy.multiplier}<br>
-                Trend: ${data.economy.trend}
-            `;
-            
-            // Users
-            const tbody = document.getElementById('user-list');
-            tbody.innerHTML = data.users.map(u => `
-                <tr>
-                    <td>${u.username}</td>
-                    <td>${u.money}</td>
-                    <td>${u.level}</td>
-                    <td>${u.last_active}</td>
-                    <td>${u.banned ? '<span style="color:red">BANLI</span>' : '<span style="color:green">AKTİF</span>'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-danger" onclick="adminAction('ban', '${u.username}')">BAN</button>
-                        <button class="btn btn-sm btn-success" onclick="adminAction('unban', '${u.username}')">AÇ</button>
-                        <button class="btn btn-sm btn-warning" onclick="promptMoney('${u.username}')">PARA VER</button>
-                        <button class="btn btn-sm btn-info" onclick="adminAction('reset_mission', '${u.username}')">GÖREV SIFIRLA</button>
-                    </td>
-                </tr>
-            `).join('');
-            
-            // Load Items for Price Editing
-            const marketRes = await fetch('/api/market');
-            const marketData = await marketRes.json();
-            const itemsDiv = document.getElementById('admin-items-list');
-             itemsDiv.innerHTML = Object.entries(marketData.items).map(([key, item]) => `
-                 <div style="display:flex; justify-content:space-between; margin-bottom:5px; align-items:center;">
-                     <span style="width:30%">${item.name}</span>
-                     <input type="number" value="${item.base_price}" 
-                            style="width:50px; padding:2px; background:#333; color:white; border:1px solid #555"
-                            onchange="updatePrice('${key}', this.value)">
-                     <button class="btn btn-xs btn-danger" onclick="deleteItem('${key}')">X</button>
-                 </div>
-             `).join('');
-         }
-         
-         async function addItem() {
-             const key = document.getElementById('new-item-key').value;
-             const name = document.getElementById('new-item-name').value;
-             const price = document.getElementById('new-item-price').value;
-             
-             if (!key || !name || !price) return alert("Eksik bilgi!");
-             
-             await fetch('/api/admin/market', {
-                 method: 'POST',
-                 headers: {'Content-Type': 'application/json'},
-                 body: JSON.stringify({
-                     action: 'add_item',
-                     key, name, price, rarity: 1
-                 })
-             });
-             loadAdminStats();
-         }
-
-         async function deleteItem(key) {
-             if(!confirm(key + ' silinsin mi?')) return;
-             await fetch('/api/admin/market', {
-                 method: 'POST',
-                 headers: {'Content-Type': 'application/json'},
-                 body: JSON.stringify({
-                     action: 'delete_item',
-                     key
-                 })
-             });
-             loadAdminStats();
-         }
-
-         async function updatePrice(item, price) {
-            await fetch('/api/admin/market', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    action: 'update_price',
-                    item: item,
-                    price: parseInt(price)
-                })
-            });
+            alert(data.message);
+            if(data.success) location.reload();
+        } catch(e) {
+            alert("Hata: " + e);
         }
-        
-        async function adminAction(action, user=null) {
-            let body = { action, target_user: user };
-            
-            if (action === 'broadcast') {
-                body.message = document.getElementById('broadcast-msg').value;
-            } else if (action === 'add_money') {
-                // Handled in promptMoney
-            }
-            
-            await fetch('/api/admin/action', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(body)
-            });
-            
-            if (action === 'broadcast') document.getElementById('broadcast-msg').value = '';
-            loadAdminStats();
-        }
-        
-        async function promptMoney(user) {
-            const amount = prompt(`${user} kullanıcısına ne kadar para verilsin?`);
-            if (!amount) return;
-            
-            await fetch('/api/admin/action', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    action: 'add_money',
-                    target_user: user,
-                    amount: parseInt(amount)
-                })
-            });
-            loadAdminStats();
-        }
-        
-        setInterval(loadAdminStats, 5000);
-        loadAdminStats();
-    </script>
-</body>
-</html>
+    }
+}
+</script>
+{% endblock %}

@@ -3,6 +3,7 @@ import json
 import time
 import random
 import threading
+import os
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -257,22 +258,23 @@ def logout():
 def game():
     if 'username' not in session:
         return redirect(url_for('login_page'))
-    return render_template('game.html')
+    return render_template('game.html', active_page='game')
 
 @app.route('/leaderboard')
 def leaderboard_page():
-    return render_template('game.html') # Re-use game template but JS handles it? Or simple template? 
-    # Context says "leaderboard and admin stats load correctly from SQLite". 
-    # Let's assume game.html handles it via JS or it's a separate view.
-    # But usually user expects a page. I'll redirect to game and let modal handle it, 
-    # OR serve a simple page. Given previous context, it likely shares style.
-    # For now, let's just serve game.html which has JS to check path.
+    return render_template('leaderboard.html', active_page='leaderboard')
+
+@app.route('/guide')
+def guide_page():
+    return render_template('guide.html', active_page='guide')
 
 @app.route('/api/me')
 def api_me():
     if 'username' not in session: return jsonify({}), 401
     u = get_user(session['username'])
     if not u: return jsonify({}), 401
+    if u.get("is_banned"):
+        return jsonify({"message": "Hesabınız yasaklandı"}), 403
     
     with lock:
         calculate_production(u)
@@ -290,6 +292,9 @@ def api_me():
             u["expedition_end_time"] = exp["end_time"]
             if now >= exp["end_time"]:
                 u["expedition_completed"] = True
+        
+        # Admin flag for Paramen42
+        u["is_admin"] = (u["username"] == "Paramen42")
         
         save_user(u)
         
@@ -685,6 +690,86 @@ def collect_expedition():
         save_user(u)
         
         return jsonify({"success": True, "message": f"Sefer tamamlandı! {total} TL ve {int(total/10)} XP kazanıldı!"})
+
+# ---------------------------------------------------------
+# ADMIN PAGES & ACTIONS
+# ---------------------------------------------------------
+
+@app.route('/admin')
+def admin_page():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    if session['username'] != 'Paramen42':
+        return redirect(url_for('game'))
+    
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM users').fetchall()
+    market_count = conn.execute('SELECT COUNT(*) AS c FROM market').fetchone()['c']
+    conn.close()
+    
+    users = []
+    total_money = 0
+    for r in rows:
+        d = json.loads(r['data'])
+        users.append({
+            "username": r['username'],
+            "money": d.get('money', 0),
+            "level": d.get('level', 1),
+            "is_banned": d.get('is_banned', False)
+        })
+        total_money += d.get('money', 0)
+    
+    stats = {
+        "total_users": len(users),
+        "total_money": total_money,
+        "market_listings": market_count
+    }
+    
+    return render_template('admin.html', users=users, stats=stats, active_page='admin')
+
+@app.route('/api/admin/action', methods=['POST'])
+def admin_action():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    if session['username'] != 'Paramen42': return jsonify({"success": False}), 403
+    
+    data = request.json
+    target = data.get('username')
+    action = data.get('action')
+    amount = data.get('amount')
+    
+    if not target or not action:
+        return jsonify({"success": False, "message": "Eksik parametre!"})
+    
+    u = get_user(target)
+    if not u:
+        return jsonify({"success": False, "message": "Kullanıcı bulunamadı!"})
+    
+    with lock:
+        if action == 'add_money':
+            val = int(amount or 0)
+            u['money'] = u.get('money', 0) + max(0, val)
+        elif action == 'remove_money':
+            val = int(amount or 0)
+            u['money'] = max(0, u.get('money', 0) - max(0, val))
+        elif action == 'set_level':
+            val = int(amount or 1)
+            u['level'] = max(1, val)
+        elif action == 'ban_user':
+            u['is_banned'] = True
+        elif action == 'unban_user':
+            u['is_banned'] = False
+        elif action == 'delete_user':
+            conn = get_db_connection()
+            conn.execute('DELETE FROM users WHERE username = ?', (target,))
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "message": "Kullanıcı silindi!"})
+        else:
+            return jsonify({"success": False, "message": "Geçersiz eylem!"})
+        
+        save_user(u)
+    
+    return jsonify({"success": True, "message": "İşlem tamamlandı!"})
 
 if __name__ == '__main__':
     init_db()

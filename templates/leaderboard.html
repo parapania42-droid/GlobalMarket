@@ -1,45 +1,53 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Market - Liderlik Tablosu</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="hud">
-        <div class="container hud-content">
-            <div class="hud-item">
-                <span class="hud-label">Liderlik</span>
-                <span class="hud-value" style="color:var(--warning)">TOP 50</span>
-            </div>
-            <div class="hud-item" style="flex-grow:1; text-align:right;">
-                <a href="/game" class="btn btn-sm btn-secondary">Oyuna Dön</a>
-            </div>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container" style="padding-top: 20px;">
+    <div class="card">
+        <div class="card-header">
+            <h2>🏆 Liderlik Tablosu</h2>
+        </div>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="text-align: left; border-bottom: 2px solid #444;">
+                        <th style="padding: 15px;">#</th>
+                        <th>Oyuncu</th>
+                        <th>Net Servet</th>
+                        <th>Nakit</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-body">
+                    <!-- JS ile doldurulacak -->
+                </tbody>
+            </table>
         </div>
     </div>
+</div>
 
-    <div class="container" style="margin-top: 80px;">
-        <div class="card">
-            <h2>🏆 En Zengin Tüccarlar</h2>
-            <div style="overflow-x:auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Oyuncu</th>
-                            <th>Nakit</th>
-                            <th>Net Servet</th>
-                        </tr>
-                    </thead>
-                    <tbody id="leaderboard-body">
-                        <!-- JS ile dolacak -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+<script>
+document.addEventListener('DOMContentLoaded', fetchLeaderboard);
 
-    <script src="/static/js/main.js"></script>
-</body>
-</html>
+async function fetchLeaderboard() {
+    try {
+        const res = await fetch('/api/leaderboard');
+        const data = await res.json();
+        
+        const tbody = document.getElementById('leaderboard-body');
+        if (!tbody) return;
+        
+        tbody.innerHTML = data.map((u, index) => `
+            <tr style="border-bottom: 1px solid #333;">
+                <td style="padding: 15px; font-weight: bold; color: ${index < 3 ? 'var(--warning)' : 'inherit'}">
+                    ${index + 1}
+                </td>
+                <td style="font-weight: bold;">${u.username}</td>
+                <td style="color: var(--success);">${new Intl.NumberFormat('tr-TR').format(u.net_worth)} TL</td>
+                <td style="color: var(--text-muted);">${new Intl.NumberFormat('tr-TR').format(u.money)} TL</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error("Leaderboard fetch error:", e);
+    }
+}
+</script>
+{% endblock %}
