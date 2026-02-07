@@ -770,13 +770,26 @@ async function upgradeFactory(fid) {
             headers: {'Content-Type': 'application/json'}
         });
         const data = await res.json();
-        alert(data.message || (data.success ? 'Yükseltildi' : 'Başarısız'));
+        showMessage(data.message || (data.success ? 'Fabrika başarıyla yükseltildi!' : 'Başarısız'));
         if (data.success) {
-            updateAll();
-            updateFactoryModal(fid);
+            // Update only the related factory card fields (level, production, cost)
+            const levelEl = document.querySelector(`#level-${fid}`);
+            const rateEl = document.querySelector(`#rate-${fid}`);
+            const costEl = document.querySelector(`#cost-${fid}`);
+            if (levelEl) levelEl.textContent = data.new_level;
+            if (rateEl) rateEl.textContent = data.new_production;
+            if (costEl) costEl.textContent = formatMoney(data.next_cost);
+            // Optionally refresh factory status for accurate next_cost
+            try {
+                const st = await fetch(`/api/factory_status/${fid}`);
+                if (st.ok) {
+                    const sdata = await st.json();
+                    if (costEl) costEl.textContent = formatMoney(sdata.next_cost);
+                }
+            } catch (_) {}
         }
     } catch (e) {
-        alert("Hata!");
+        showMessage("Hata!", 'error');
     }
 }
 

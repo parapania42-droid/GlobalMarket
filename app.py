@@ -1342,7 +1342,7 @@ def upgrade_factory(fid):
         cost = conf['cost'] * next_lvl
         
         if u['money'] < cost:
-             return jsonify({"success": False, "message": "Yetersiz para!"})
+             return jsonify({"success": False, "message": "Yetersiz bakiye!"})
              
         # Check unlock level
         if u['level'] < conf['unlock_lvl']:
@@ -1351,8 +1351,22 @@ def upgrade_factory(fid):
         u['money'] -= cost
         u['factories'][fid] = next_lvl
         save_user(u)
-        
-    return jsonify({"success": True, "message": "Fabrika yükseltildi!"})
+    
+    # Compute new production metrics for response
+    conn = get_db_connection()
+    assigned = conn.execute('SELECT COALESCE(SUM(count),0) AS c FROM factory_assignments WHERE owner = ? AND factory_type = ?', 
+                            (u['username'], fid)).fetchone()['c']
+    conn.close()
+    running = bool(u.get('factory_running', {}).get(fid, True))
+    rate_per_hour = int(conf['rate'] * max(1, next_lvl) * (1 + 0.05 * assigned) * (1 if running else 0))
+    next_cost = conf['cost'] * (next_lvl + 1)
+    return jsonify({
+        "success": True,
+        "message": "Fabrika başarıyla yükseltildi!",
+        "new_level": next_lvl,
+        "new_production": rate_per_hour,
+        "next_cost": next_cost
+    })
 
 @app.route('/api/factories')
 def api_factories():

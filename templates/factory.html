@@ -31,17 +31,18 @@ async function loadFactories() {
       <div class="factory-card" style="padding: 15px; border:1px solid #333; margin-bottom:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div style="font-weight:bold">${f.name}</div>
-          <div>Lv. ${f.level}</div>
+          <div>Lv. <span id="level-${f.type}">${f.level}</span></div>
         </div>
         <div style="display:grid; grid-template-columns: repeat(2,1fr); gap:5px; margin-top:5px;">
-          <div>Üretim (saatlik): <strong>${f.rate_per_hour}</strong></div>
+          <div>Üretim (saatlik): <strong id="rate-${f.type}">${f.rate_per_hour}</strong></div>
           <div>İşçi: <strong>${f.worker_count}</strong> / Kapasite: <strong>${f.worker_capacity}</strong></div>
-          <div>Günlük Gelir: <strong>${f.daily_income} TL</strong></div>
+          <div>Günlük Gelir: <strong id="daily-${f.type}">${f.daily_income} TL</strong></div>
           <div>Durum: <strong>${f.running ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
           <div>Üretim süresi: <strong>${f.production_duration_minutes || '-'} dk</strong></div>
           <div>Son üretim: <strong>${f.last_collect_hours_ago} saat önce</strong></div>
           <div>Üretim bonusu: <strong>%${f.bonus_pct}</strong></div>
           <div>Kalan süre: <strong id="remain-${f.type}">${(f.collectable ? 'Toplanabilir' : formatRemain(f.remaining_seconds))}</strong></div>
+          <div>Sonraki seviye maliyet: <strong id="cost-${f.type}">-</strong></div>
         </div>
         <div style="display:flex; gap:5px; margin-top:8px;">
           <button class="btn btn-success btn-sm" onclick="factoryStart('${f.type}')">Üretimi Başlat</button>
@@ -70,6 +71,16 @@ async function loadFactories() {
       };
       update();
     });
+    // Fetch next cost per factory for display
+    data.forEach(async f => {
+      try {
+        const res = await fetch('/api/factory_status/'+f.type);
+        if (!res.ok) return;
+        const st = await res.json();
+        const costEl = document.getElementById('cost-'+f.type);
+        if (costEl) costEl.textContent = st.next_cost ? (new Intl.NumberFormat('tr-TR').format(st.next_cost)+' TL') : '-';
+      } catch (_) {}
+    });
 }
 document.addEventListener('DOMContentLoaded', loadFactories);
 
@@ -95,6 +106,14 @@ function formatRemain(sec) {
   const m = Math.floor(sec / 60), s = sec % 60;
   return m + ' dk ' + s + ' sn';
 }
+// Scroll position preservation (fallback if reload happens)
+document.addEventListener('DOMContentLoaded', () => {
+  const y = parseInt(localStorage.getItem('factory_scroll_y') || '0');
+  if (y) window.scrollTo(0, y);
+});
+window.addEventListener('beforeunload', () => {
+  localStorage.setItem('factory_scroll_y', String(window.scrollY || 0));
+});
 async function assignWorkers(type) {
   const count = parseInt(document.getElementById('assign-'+type).value || '0');
   if (!count || count <= 0) return alert('Geçerli adet girin');
