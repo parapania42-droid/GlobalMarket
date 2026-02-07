@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+  <div class="card">
+    <div class="card-header">
+      <h2>📦 Envanter</h2>
+      <div class="hint-text">Ürünlerinizin miktarı ve tahmini piyasa değeri.</div>
+    </div>
+    <div id="inventory-total" class="net-worth">Toplam Değer: 0 TL</div>
+    <table style="width:100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border)">Ürün</th>
+          <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border)">Miktar</th>
+          <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border)">Fiyat</th>
+          <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border)">Değer</th>
+        </tr>
+      </thead>
+      <tbody id="inventory-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function loadInventory() {
+  try {
+    const res = await fetch('/api/inventory');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById('inventory-body');
+    const total = document.getElementById('inventory-total');
+    if (!data.items || data.items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:10px; color:var(--text-muted)">Envanter boş.</td></tr>';
+      total.textContent = 'Toplam Değer: 0 TL';
+      return;
+    }
+    tbody.innerHTML = data.items.map(it => `
+      <tr>
+        <td style="padding:8px">${it.name}</td>
+        <td style="padding:8px; text-align:right">${it.qty}</td>
+        <td style="padding:8px; text-align:right">${it.price} TL</td>
+        <td style="padding:8px; text-align:right; color:var(--success)">${it.value} TL</td>
+      </tr>
+    `).join('');
+    total.textContent = 'Toplam Değer: ' + data.total_value + ' TL';
+  } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', loadInventory);
+</script>
+{% endblock %}

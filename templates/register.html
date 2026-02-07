@@ -7,20 +7,55 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="login-container">
-        <div class="card login-box">
-            <h1>🌍 Global Market</h1>
-            <p style="color:var(--text-muted)">Yeni bir hesap oluşturun.</p>
-            <div style="margin-top: 30px;">
-                <input type="text" id="reg-username" placeholder="Kullanıcı Adı" autocomplete="off">
-                <input type="password" id="reg-password" placeholder="Şifre" autocomplete="off" style="margin-top:10px;">
-                <button class="btn" style="width:100%; margin-top:20px;" onclick="register()">Kayıt Ol</button>
+    <div class="login-container" style="display:flex; align-items:center; justify-content:center; min-height:100vh;">
+        <div class="card login-box" style="max-width:420px; width:100%;">
+            <h1 style="text-align:center; margin-bottom:10px;">🌍 Global Market</h1>
+            <p style="color:var(--text-muted); text-align:center">Yeni bir hesap oluşturun.</p>
+            <div style="margin-top: 20px;">
+                <label style="display:block; margin-bottom:6px;">Kullanıcı Adı</label>
+                <input type="text" id="reg-username" placeholder="Kullanıcı Adı" autocomplete="off" style="width:100%; padding:12px; font-size:1em;">
+                <label style="display:block; margin:12px 0 6px;">Şifre</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="password" id="reg-password" placeholder="Şifre (min. 6)" autocomplete="off" style="flex:1; padding:12px; font-size:1em;">
+                    <button class="btn btn-secondary btn-sm" onclick="togglePw()">Göster</button>
+                </div>
+                <div id="reg-error" style="color:var(--danger); margin-top:8px; display:none;"></div>
+                <button class="btn" style="width:100%; margin-top:20px; padding:12px; font-size:1.05em;" onclick="register()">Kayıt Ol</button>
             </div>
-            <div style="margin-top: 20px; text-align: center;">
+            <div style="margin-top: 18px; text-align: center;">
                 <a href="/login" style="color:var(--primary); text-decoration:none;">Zaten hesabın var mı? Giriş Yap</a>
             </div>
         </div>
     </div>
-    <script src="/static/js/main.js"></script>
+    <script>
+    function togglePw() {
+        const ip = document.getElementById('reg-password');
+        ip.type = ip.type === 'password' ? 'text' : 'password';
+    }
+    async function register() {
+        const u = document.getElementById('reg-username').value.trim();
+        const p = document.getElementById('reg-password').value;
+        const err = document.getElementById('reg-error');
+        err.style.display = 'none';
+        err.textContent = '';
+        if (!u) {
+            err.textContent = 'Kullanıcı adı gerekli';
+            err.style.display = 'block'; return;
+        }
+        if (!p || p.length < 6) {
+            err.textContent = 'Şifre en az 6 karakter';
+            err.style.display = 'block'; return;
+        }
+        const res = await fetch('/register', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username: u, password: p})});
+        const data = await res.json();
+        if (data.success) {
+            alert(data.message);
+            window.location.href = '/login';
+        } else {
+            err.textContent = data.message || 'Kayıt başarısız';
+            err.style.display = 'block';
+        }
+    }
+    </script>
 </body>
 </html>

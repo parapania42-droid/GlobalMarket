@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+  <div class="card">
+    <div class="card-header">
+      <h2>🚚 Lojistik</h2>
+      <div class="hint-text">Araç satın alın, görev oluşturun ve teslimatları yönetin.</div>
+    </div>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+      <div>
+        <h3>Araçlar</h3>
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Kamyonet')">Kamyonet (100) – 10.000 TL</button>
+          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Kamyon')">Kamyon (500) – 50.000 TL</button>
+          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Tır')">Tır (2000) – 200.000 TL</button>
+        </div>
+        <div id="vehicle-list" class="hint-text">Araçlar yükleniyor...</div>
+      </div>
+      <div>
+        <h3>Görev Oluştur</h3>
+        <div class="input-group">
+          <select id="task-vehicle" class="form-input"></select>
+          <input id="task-item" class="form-input" placeholder="Ürün adı (örn: Çelik)">
+        </div>
+        <div class="input-group">
+          <input id="task-amount" type="number" class="form-input" placeholder="Miktar">
+          <select id="task-destination" class="form-input">
+            <option>Market</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <select id="task-scope" class="form-input">
+            <option value="same">Aynı şehir (10 dk)</option>
+            <option value="different">Farklı şehir (30 dk)</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="createTask()">Görev Oluştur</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Aktif Görevler</h3></div>
+    <div id="task-list" class="hint-text">Görevler yükleniyor...</div>
+  </div>
+</div>
+
+<script>
+async function loadVehicles() {
+  const res = await fetch('/api/logistics/vehicles');
+  if (!res.ok) return;
+  const rows = await res.json();
+  const list = document.getElementById('vehicle-list');
+  if (!rows.length) {
+    list.textContent = 'Henüz aracınız yok.';
+  } else {
+    list.innerHTML = rows.map(v => `<div>• ${v.type} — Kapasite: ${v.capacity} (ID: ${v.id})</div>`).join('');
+  }
+  const sel = document.getElementById('task-vehicle');
+  sel.innerHTML = rows.map(v => `<option value="${v.id}">${v.type} (#${v.id})</option>`).join('');
+}
+async function buyVehicle(type) {
+  const res = await fetch('/api/logistics/vehicles/buy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type})});
+  const data = await res.json();
+  alert(data.message || '');
+  loadVehicles();
+}
+async function loadTasks() {
+  const res = await fetch('/api/logistics/tasks');
+  if (!res.ok) return;
+  const rows = await res.json();
+  const el = document.getElementById('task-list');
+  if (!rows.length) {
+    el.textContent = 'Aktif görev bulunmuyor.';
+    return;
+  }
+  const now = Date.now()/1000;
+  el.innerHTML = rows.map(t => {
+    const remain = Math.max(0, Math.floor(t.eta - now));
+    const min = Math.floor(remain / 60), sec = remain % 60;
+    return `<div style="padding:6px; border-bottom:1px solid var(--border)">
+      <strong>${t.item}</strong> × ${t.amount} → ${t.destination} — Araç #${t.vehicle_id}
+      <div>${t.delivered ? 'Tamamlandı' : 'ETA: ' + min + ' dk ' + sec + ' sn'}</div>
+    </div>`;
+  }).join('');
+}
+async function createTask() {
+  const vehicle_id = parseInt(document.getElementById('task-vehicle').value);
+  const item = document.getElementById('task-item').value.trim();
+  const amount = parseInt(document.getElementById('task-amount').value);
+  const destination = document.getElementById('task-destination').value;
+  const city_scope = document.getElementById('task-scope').value;
+  if (!vehicle_id || !item || !amount || amount <= 0) {
+    alert('Geçerli bilgiler girin!');
+    return;
+  }
+  const res = await fetch('/api/logistics/create_task', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({vehicle_id, item, amount, destination, city_scope})});
+  const data = await res.json();
+  alert(data.message || '');
+  loadTasks();
+}
+document.addEventListener('DOMContentLoaded', () => { loadVehicles(); loadTasks(); setInterval(loadTasks, 5000); });
+</script>
+{% endblock %}

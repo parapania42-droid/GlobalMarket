@@ -21,7 +21,13 @@ async function loadFactories() {
         list.innerHTML = '<div class="hint-text">Fabrikanız yok veya veriler yüklenemedi.</div>';
         return;
     }
-    list.innerHTML = data.map(f => `
+    list.innerHTML = `
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input id="buy-workers-count" type="number" class="form-input" placeholder="Adet">
+        <button class="btn btn-primary btn-sm" onclick="buyWorkers()">İşçi Satın Al (500 TL)</button>
+        <div class="hint-text">Havuzdaki işçiler kapasiteye kadar fabrikalara atanabilir.</div>
+      </div>
+    ` + data.map(f => `
       <div class="factory-card" style="padding: 15px; border:1px solid #333; margin-bottom:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div style="font-weight:bold">${f.name}</div>
@@ -29,14 +35,18 @@ async function loadFactories() {
         </div>
         <div style="display:grid; grid-template-columns: repeat(2,1fr); gap:5px; margin-top:5px;">
           <div>Üretim (saatlik): <strong>${f.rate_per_hour}</strong></div>
-          <div>İşçi Sayısı: <strong>${f.worker_count}</strong></div>
+          <div>İşçi: <strong>${f.worker_count}</strong> / Kapasite: <strong>${f.worker_capacity}</strong></div>
           <div>Günlük Gelir: <strong>${f.daily_income} TL</strong></div>
           <div>Durum: <strong>${f.running ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
+          <div>Üretim süresi: <strong>3 saat</strong></div>
+          <div>Son üretim: <strong>${f.last_collect_hours_ago} saat önce</strong></div>
+          <div>Üretim bonusu: <strong>%${f.bonus_pct}</strong></div>
         </div>
         <div style="display:flex; gap:5px; margin-top:8px;">
           <button class="btn btn-success btn-sm" onclick="factoryStart('${f.type}')">Üretimi Başlat</button>
           <button class="btn btn-warning btn-sm" onclick="factoryStop('${f.type}')">Üretimi Durdur</button>
           <button class="btn btn-primary btn-sm" onclick="upgradeFactory('${f.type}')">Seviye Yükselt</button>
+          <button class="btn btn-success btn-sm" onclick="collectFactory('${f.type}')">Üretimi Topla</button>
         </div>
         <div style="display:flex; gap:5px; margin-top:8px;">
           <input type="number" id="assign-${f.type}" class="form-input" placeholder="İşçi adedi">
@@ -55,6 +65,13 @@ async function factoryStart(type) {
 }
 async function factoryStop(type) {
   const res = await fetch('/api/factory/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type})});
+  const d = await res.json(); alert(d.message || '');
+  loadFactories();
+}
+async function buyWorkers() {
+  const count = parseInt(document.getElementById('buy-workers-count').value || '0');
+  if (!count || count <= 0) return alert('Geçerli adet girin');
+  const res = await fetch('/api/workers/buy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({count})});
   const d = await res.json(); alert(d.message || '');
   loadFactories();
 }

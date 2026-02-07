@@ -21,13 +21,13 @@ lock = threading.Lock()
 # ---------------------------------------------------------
 
 FACTORY_CONFIG = {
-    "wood": {"name": "Odun Fabrikası", "cost": 100, "rate": 10, "capacity": 100, "unlock_lvl": 1, "type": "Odun"},
-    "stone": {"name": "Taş Ocağı", "cost": 500, "rate": 5, "capacity": 50, "unlock_lvl": 2, "type": "Taş"},
-    "iron": {"name": "Demir Madeni", "cost": 2000, "rate": 3, "capacity": 30, "unlock_lvl": 3, "type": "Demir"},
-    "coal": {"name": "Kömür Madeni", "cost": 1500, "rate": 4, "capacity": 40, "unlock_lvl": 3, "type": "Kömür"},
-    "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik"},
-    "plastic": {"name": "Plastik Fabrikası", "cost": 500000, "rate": 1.5, "capacity": 20, "unlock_lvl": 25, "type": "Plastik"},
-    "electronics": {"name": "Elektronik Fabrikası", "cost": 1000000, "rate": 0.8, "capacity": 10, "unlock_lvl": 30, "type": "Elektronik"}
+    "wood": {"name": "Odun Fabrikası", "cost": 100, "rate": 10, "capacity": 100, "unlock_lvl": 1, "type": "Odun", "worker_capacity": 5},
+    "stone": {"name": "Taş Ocağı", "cost": 500, "rate": 5, "capacity": 50, "unlock_lvl": 2, "type": "Taş", "worker_capacity": 5},
+    "iron": {"name": "Demir Madeni", "cost": 2000, "rate": 3, "capacity": 30, "unlock_lvl": 3, "type": "Demir", "worker_capacity": 15},
+    "coal": {"name": "Kömür Madeni", "cost": 1500, "rate": 4, "capacity": 40, "unlock_lvl": 3, "type": "Kömür", "worker_capacity": 15},
+    "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik", "worker_capacity": 30},
+    "plastic": {"name": "Plastik Fabrikası", "cost": 500000, "rate": 1.5, "capacity": 20, "unlock_lvl": 25, "type": "Plastik", "worker_capacity": 30},
+    "electronics": {"name": "Elektronik Fabrikası", "cost": 1000000, "rate": 0.8, "capacity": 10, "unlock_lvl": 30, "type": "Elektronik", "worker_capacity": 30}
 }
 
 # ---------------------------------------------------------
@@ -177,6 +177,33 @@ def init_db():
             )
         ''')
         
+        # Logistics: Vehicles
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS vehicles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                type TEXT NOT NULL,
+                capacity INTEGER NOT NULL,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
+        # Logistics: Tasks
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS logistics_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                vehicle_id INTEGER NOT NULL,
+                item TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                destination TEXT NOT NULL,
+                city_scope TEXT NOT NULL, -- 'same' or 'different'
+                eta REAL NOT NULL,
+                delivered INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
         # Marketplace Products
         c.execute('''
             CREATE TABLE IF NOT EXISTS marketplace_products (
@@ -260,13 +287,18 @@ def get_user(username):
         
         # Migration/Repair for missing keys
         if "inventory" not in u_data: u_data["inventory"] = {}
+        # Ensure inventory keys exist
+        for k in ["Odun","Taş","Demir","Çelik","Plastik","Elektronik","Gıda","Tekstil"]:
+            u_data["inventory"][k] = u_data["inventory"].get(k, 0)
         if "factories" not in u_data: u_data["factories"] = {}
         if "factory_storage" not in u_data: u_data["factory_storage"] = {}
         if "factory_last_update" not in u_data: u_data["factory_last_update"] = {}
+        if "factory_last_collect" not in u_data: u_data["factory_last_collect"] = {}
         if "net_worth" not in u_data: u_data["net_worth"] = 0
         if "xp" not in u_data: u_data["xp"] = 0
         if "level" not in u_data: u_data["level"] = 1
         if "money" not in u_data: u_data["money"] = 0
+        if "workers_available" not in u_data: u_data["workers_available"] = 0
         
         return u_data
     return None
@@ -291,10 +323,11 @@ def create_user(username, password):
         "money": 1000,
         "level": 1,
         "xp": 0,
-        "inventory": {"Odun": 0, "Taş": 0},
+        "inventory": {"Odun": 0, "Taş": 0, "Demir": 0, "Çelik": 0, "Plastik": 0, "Elektronik": 0, "Gıda": 0, "Tekstil": 0},
         "factories": {},
         "factory_storage": {},
         "factory_last_update": {},
+        "factory_last_collect": {},
         "factory_boosts": {},
         "net_worth": 1000,
         "mission": {"description": "İlk fabrikanı kur!", "target_qty": 1, "current_qty": 0, "reward": 500},
@@ -302,7 +335,8 @@ def create_user(username, password):
         "is_afk": False,
         "is_admin": False,
         "expedition": None, # {type, start_time, end_time, cost}
-        "last_daily_bonus": 0
+        "last_daily_bonus": 0,
+        "workers_available": 0
     }
     
     conn = get_db_connection()
@@ -430,9 +464,13 @@ def register():
     username = data.get('username')
     password = data.get('password')
     
+    if not username or not password or len(password) < 6:
+        return jsonify({"success": False, "message": "Şifre en az 6 karakter"})
+    if get_user(username):
+        return jsonify({"success": False, "message": "Kullanıcı adı kullanımda"})
     if create_user(username, password):
         return jsonify({"success": True, "message": "Kayıt başarılı! Giriş yapabilirsiniz."})
-    return jsonify({"success": False, "message": "Bu kullanıcı adı alınmış!"})
+    return jsonify({"success": False, "message": "Kayıt başarısız"})
 
 @app.route('/logout')
 def logout():
@@ -483,6 +521,18 @@ def land_page():
         return redirect(url_for('login_page'))
     return render_template('land.html', active_page='land')
 
+@app.route('/inventory')
+def inventory_page():
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('inventory.html', active_page='inventory')
+
+@app.route('/logistics')
+def logistics_page():
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('logistics.html', active_page='logistics')
+
 @app.route('/workers')
 def workers_page():
     if 'user_id' not in session:
@@ -522,6 +572,12 @@ def api_marketplace_add():
     stock = int(data.get('stock', 0))
     if not name or price <= 0 or stock <= 0:
         return jsonify({"success": False, "message": "Geçersiz bilgi!"})
+    with lock:
+        current = u['inventory'].get(name, 0)
+        if current < stock:
+            return jsonify({"success": False, "message": "Envanterde yeterli stok yok!"})
+        u['inventory'][name] = current - stock
+        save_user(u)
     conn = get_db_connection()
     conn.execute('INSERT INTO marketplace_products (seller, name, description, price, stock, is_bot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
                  (u['username'], name, desc, price, stock, 0, time.time()))
@@ -756,6 +812,28 @@ def api_land_buy():
 # ECONOMY API: WORKERS
 # ---------------------------------------------------------
 
+@app.route('/api/workers/buy', methods=['POST'])
+def api_workers_buy():
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
+    data = request.json
+    count = int(data.get('count', 0))
+    if count <= 0:
+        return jsonify({"success": False, "message": "Geçersiz adet!"})
+    cost = 500 * count
+    with lock:
+        if u['money'] < cost:
+            return jsonify({"success": False, "message": "Yetersiz bakiye!"})
+        u['money'] -= cost
+        u['workers_available'] = u.get('workers_available', 0) + count
+        save_user(u)
+    conn = get_db_connection()
+    conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                 (u['username'], 'workers_buy', -cost, time.time(), json.dumps({"count": count})))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": f"{count} işçi satın alındı!"})
+
 @app.route('/api/workers/hire', methods=['POST'])
 def api_workers_hire():
     if 'user_id' not in session: return jsonify({"success": False}), 401
@@ -816,6 +894,102 @@ def api_workers_fire():
         conn.close()
     return jsonify({"success": True, "message": f"İşten çıkarıldı. Tazminat: {cost} TL"})
 
+# ---------------------------------------------------------
+# LOGISTICS API
+# ---------------------------------------------------------
+@app.route('/api/logistics/vehicles')
+def api_logistics_vehicles():
+    if 'user_id' not in session: return jsonify([]), 401
+    u = get_user(session['user_id'])
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM vehicles WHERE owner = ?', (u['username'],)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/logistics/vehicles/buy', methods=['POST'])
+def api_logistics_buy_vehicle():
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
+    data = request.json
+    type_ = data.get('type')
+    types = {
+        "Kamyonet": {"capacity": 100, "price": 10000},
+        "Kamyon": {"capacity": 500, "price": 50000},
+        "Tır": {"capacity": 2000, "price": 200000}
+    }
+    if type_ not in types:
+        return jsonify({"success": False, "message": "Geçersiz araç türü!"})
+    info = types[type_]
+    with lock:
+        if u['money'] < info['price']:
+            return jsonify({"success": False, "message": "Yetersiz bakiye!"})
+        u['money'] -= info['price']
+        save_user(u)
+        conn = get_db_connection()
+        conn.execute('INSERT INTO vehicles (owner, type, capacity, created_at) VALUES (?, ?, ?, ?)',
+                     (u['username'], type_, info['capacity'], time.time()))
+        conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                     (u['username'], 'vehicle_buy', -info['price'], time.time(), json.dumps({"type": type_})))
+        conn.commit()
+        conn.close()
+    return jsonify({"success": True, "message": f"{type_} satın alındı!"})
+
+@app.route('/api/logistics/tasks')
+def api_logistics_tasks():
+    if 'user_id' not in session: return jsonify([]), 401
+    u = get_user(session['user_id'])
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM logistics_tasks WHERE owner = ? ORDER BY created_at DESC', (u['username'],)).fetchall()
+    # Auto-complete delivered tasks
+    now = time.time()
+    for r in rows:
+        if r['delivered'] == 0 and now >= r['eta']:
+            if r['destination'] == 'Market':
+                avg_price = _avg_price_for(r['item']) or 1
+                conn.execute('INSERT INTO marketplace_products (seller, name, description, price, stock, is_bot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                             (u['username'], r['item'], f"Lojistik teslimatı", avg_price, r['amount'], 0, time.time()))
+            elif r['destination'].startswith('Fabrika'):
+                pass
+            conn.execute('UPDATE logistics_tasks SET delivered = 1 WHERE id = ?', (r['id'],))
+    conn.commit()
+    rows = conn.execute('SELECT * FROM logistics_tasks WHERE owner = ? ORDER BY created_at DESC', (u['username'],)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/logistics/create_task', methods=['POST'])
+def api_logistics_create_task():
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
+    data = request.json
+    vehicle_id = int(data.get('vehicle_id', 0))
+    item = (data.get('item') or '').strip()
+    amount = int(data.get('amount', 0))
+    destination = (data.get('destination') or '').strip()
+    city_scope = (data.get('city_scope') or 'same').strip()
+    if not item or amount <= 0 or destination not in ['Market'] + [f"Fabrika:{fid}" for fid in FACTORY_CONFIG.keys()]:
+        return jsonify({"success": False, "message": "Geçersiz görev!"})
+    conn = get_db_connection()
+    v = conn.execute('SELECT * FROM vehicles WHERE id = ? AND owner = ?', (vehicle_id, u['username'])).fetchone()
+    if not v:
+        conn.close()
+        return jsonify({"success": False, "message": "Araç bulunamadı!"})
+    if amount > v['capacity']:
+        conn.close()
+        return jsonify({"success": False, "message": "Araç kapasitesi yetersiz!"})
+    current = u['inventory'].get(item, 0)
+    if current < amount:
+        conn.close()
+        return jsonify({"success": False, "message": "Envanter yetersiz!"})
+    with lock:
+        u['inventory'][item] = current - amount
+        save_user(u)
+        eta_delta = 600 if city_scope == 'same' else 1800
+        eta = time.time() + eta_delta
+        conn.execute('INSERT INTO logistics_tasks (owner, vehicle_id, item, amount, destination, city_scope, eta, delivered, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                     (u['username'], vehicle_id, item, amount, destination, city_scope, eta, 0, time.time()))
+        conn.commit()
+        conn.close()
+    return jsonify({"success": True, "message": "Lojistik görevi oluşturuldu!"})
 # ---------------------------------------------------------
 # ECONOMY DASHBOARD STATS
 # ---------------------------------------------------------
@@ -914,6 +1088,23 @@ def api_resources():
     res = get_resources(u['username'])
     return jsonify(res)
 
+@app.route('/api/inventory')
+def api_inventory():
+    if 'user_id' not in session: return jsonify([]), 401
+    u = get_user(session['user_id'])
+    conn = get_db_connection()
+    prices = {r['item']: r['price'] for r in conn.execute('SELECT item, price FROM prices').fetchall()}
+    conn.close()
+    items = []
+    total_value = 0
+    for name, qty in u.get('inventory', {}).items():
+        if qty <= 0: 
+            continue
+        price = int(prices.get(name, 0))
+        value = int(price * qty)
+        total_value += value
+        items.append({"name": name, "qty": qty, "price": price, "value": value})
+    return jsonify({"items": items, "total_value": total_value})
 @app.route('/api/market')
 def api_market():
     conn = get_db_connection()
@@ -1153,15 +1344,28 @@ def api_factories():
         running = bool(u.get('factory_running', {}).get(fid, True))
         assigned = conn.execute('SELECT COALESCE(SUM(count),0) AS c FROM factory_assignments WHERE owner = ? AND factory_type = ?', 
                                 (u['username'], fid)).fetchone()['c']
-        # rate per hour (base rate per minute * 60)
+        # rate per hour
         rate_per_hour = int(conf['rate'] * max(1,lvl) * (1 + 0.05 * assigned) * (1 if running else 0))
         # approximate price from global prices
         pr = conn.execute('SELECT price FROM prices WHERE item = ?', (conf['type'],)).fetchone()
         price = pr['price'] if pr else 0
         daily_income = int(rate_per_hour * 24 * price)
+        last_collect = u.get('factory_last_collect', {}).get(fid, u.get('factory_last_update', {}).get(fid, time.time()))
+        elapsed_hours = round((time.time() - last_collect) / 3600.0, 2)
+        capacity = conf.get('worker_capacity', 0) * max(1, lvl)
+        bonus_pct = int(0.05 * assigned * 100)
         rows.append({
-            "type": fid, "name": conf['name'], "level": lvl, "running": running,
-            "rate_per_hour": rate_per_hour, "worker_count": assigned, "daily_income": daily_income
+            "type": fid,
+            "name": conf['name'],
+            "level": lvl,
+            "running": running,
+            "rate_per_hour": rate_per_hour,
+            "worker_count": assigned,
+            "worker_capacity": capacity,
+            "bonus_pct": bonus_pct,
+            "production_interval_hours": 3,
+            "last_collect_hours_ago": elapsed_hours,
+            "daily_income": daily_income
         })
     conn.close()
     return jsonify(rows)
@@ -1200,15 +1404,29 @@ def api_factory_assign_workers():
     count = int(request.json.get('count', 0))
     if fid not in FACTORY_CONFIG or count <= 0:
         return jsonify({"success": False, "message": "Geçersiz parametre!"})
-    conn = get_db_connection()
-    row = conn.execute('SELECT * FROM factory_assignments WHERE owner = ? AND factory_type = ?', (u['username'], fid)).fetchone()
-    if row:
-        conn.execute('UPDATE factory_assignments SET count = count + ? WHERE id = ?', (count, row['id']))
-    else:
-        conn.execute('INSERT INTO factory_assignments (owner, factory_type, count, created_at) VALUES (?, ?, ?, ?)',
-                     (u['username'], fid, count, time.time()))
-    conn.commit()
-    conn.close()
+    level = int(u.get('factories', {}).get(fid, 0))
+    if level <= 0:
+        return jsonify({"success": False, "message": "Önce fabrikayı kurmalısınız!"})
+    capacity = FACTORY_CONFIG[fid].get('worker_capacity', 0) * level
+    with lock:
+        available = u.get('workers_available', 0)
+        if available < count:
+            return jsonify({"success": False, "message": "Yetersiz işçi havuzu!"})
+        conn = get_db_connection()
+        row = conn.execute('SELECT * FROM factory_assignments WHERE owner = ? AND factory_type = ?', (u['username'], fid)).fetchone()
+        current = row['count'] if row else 0
+        if current + count > capacity:
+            conn.close()
+            return jsonify({"success": False, "message": f"Kapasite dolu! (Kapasite: {capacity})"})
+        if row:
+            conn.execute('UPDATE factory_assignments SET count = count + ? WHERE id = ?', (count, row['id']))
+        else:
+            conn.execute('INSERT INTO factory_assignments (owner, factory_type, count, created_at) VALUES (?, ?, ?, ?)',
+                         (u['username'], fid, count, time.time()))
+        conn.commit()
+        conn.close()
+        u['workers_available'] = available - count
+        save_user(u)
     return jsonify({"success": True, "message": "İşçi atandı"})
 
 @app.route('/api/factory/unassign_workers', methods=['POST'])
@@ -1228,6 +1446,9 @@ def api_factory_unassign_workers():
     conn.execute('UPDATE factory_assignments SET count = ? WHERE id = ?', (newc, row['id']))
     conn.commit()
     conn.close()
+    with lock:
+        u['workers_available'] = u.get('workers_available', 0) + min(count, row['count'])
+        save_user(u)
     return jsonify({"success": True, "message": "İşçi çıkarıldı"})
 
 @app.route('/api/factory/collect', methods=['POST'])
@@ -1237,25 +1458,40 @@ def collect_factory():
     data = request.json
     fid = data.get('factory_id')
     
+    conf = FACTORY_CONFIG.get(fid)
+    if not conf:
+        return jsonify({"success": False, "message": "Geçersiz fabrika!"})
     with lock:
-        calculate_production(u) # Ensure latest
-        storage = u['factory_storage'].get(fid, 0)
-        if storage <= 0:
-             return jsonify({"success": False, "message": "Depo boş!"})
-             
-        conf = FACTORY_CONFIG.get(fid)
+        now = time.time()
+        last = u.get('factory_last_collect', {}).get(fid, u.get('factory_last_update', {}).get(fid, now))
+        elapsed = now - last
+        if elapsed <= 0:
+            return jsonify({"success": False, "message": "Üretim yok!"})
+        # Assigned workers
+        conn = get_db_connection()
+        assigned = conn.execute('SELECT COALESCE(SUM(count),0) AS c FROM factory_assignments WHERE owner = ? AND factory_type = ?', 
+                                (u['username'], fid)).fetchone()['c']
+        conn.close()
+        worker_mult = 1.0 + (0.05 * assigned)
+        level = u.get('factories', {}).get(fid, 0)
+        running = bool(u.get('factory_running', {}).get(fid, True))
+        # Boost
+        is_boosted = u.get("factory_boosts", {}).get(fid, 0) > now
+        rate_per_hour = conf["rate"] * max(1, level) * worker_mult * (2 if is_boosted else 1) * (1 if running else 0)
+        produced = int((elapsed / 10800.0) * rate_per_hour)
+        if produced <= 0:
+            # Update last collect anyway to avoid zero spam on tiny intervals
+            u.setdefault('factory_last_collect', {})[fid] = now
+            save_user(u)
+            return jsonify({"success": False, "message": "Üretim henüz birikmedi!"})
         rtype = conf['type']
-        
-        u['inventory'][rtype] = u['inventory'].get(rtype, 0) + int(storage)
-        u['factory_storage'][fid] = 0
-        
-        # XP Reward
-        u['xp'] += int(storage)
+        u['inventory'][rtype] = u['inventory'].get(rtype, 0) + produced
+        u.setdefault('factory_last_collect', {})[fid] = now
+        # XP reward proportional
+        u['xp'] += produced
         check_level_up(u)
-        
         save_user(u)
-        
-    return jsonify({"success": True, "message": f"{int(storage)} {rtype} toplandı!"})
+    return jsonify({"success": True, "message": f"{produced} {conf['type']} toplandı!"})
 
 @app.route('/api/factory/boost', methods=['POST'])
 def boost_factory():

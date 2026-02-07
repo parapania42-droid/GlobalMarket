@@ -19,6 +19,10 @@
          But for rendering, we need the containers.
     -->
     <div class="container main-game-area" id="game-page-container">
+        <div class="card">
+            <div class="card-header"><h2>📊 Özet</h2></div>
+            <div id="home-summary" class="hint-text">Yükleniyor...</div>
+        </div>
         <div class="card" style="margin-bottom:15px;">
             <div class="card-header"><h2>💰 Canlı Piyasa</h2></div>
             <div id="home-price-list" class="inventory-grid"></div>
@@ -134,4 +138,33 @@
             </div>
         </div>
     </div>
+    <script>
+    async function loadSummary() {
+        try {
+            const [statsRes, invRes, tasksRes] = await Promise.all([
+                fetch('/api/economy/stats'),
+                fetch('/api/inventory'),
+                fetch('/api/logistics/tasks')
+            ]);
+            if (!statsRes.ok) return;
+            const stats = await statsRes.json();
+            const inv = invRes.ok ? await invRes.json() : {items:[], total_value:0};
+            const tasks = tasksRes.ok ? await tasksRes.json() : [];
+            const el = document.getElementById('home-summary');
+            const invTop = inv.items.slice(0,6).map(i => `${i.name}:${i.qty}`).join(', ');
+            const activeTasks = tasks.filter(t => t.delivered === 0).length;
+            el.innerHTML = `
+              <div style="display:grid; grid-template-columns: repeat(2,1fr); gap:8px;">
+                <div>Toplam Para: <strong>${stats.money} TL</strong></div>
+                <div>Toplam İşçi: <strong>${stats.worker_count}</strong></div>
+                <div>Envanter Değeri: <strong>${inv.total_value} TL</strong></div>
+                <div>Aktif Lojistik Görevleri: <strong>${activeTasks}</strong></div>
+                <div>Özet Envanter: <strong>${invTop || '-'}</strong></div>
+                <div>Canlı Fiyatlar: <a href="/marketplace">Market</a></div>
+              </div>
+            `;
+        } catch (e) {}
+    }
+    document.addEventListener('DOMContentLoaded', () => { loadSummary(); setInterval(loadSummary, 10000); });
+    </script>
 {% endblock %}
