@@ -11,10 +11,13 @@
       <div>
         <h3>Araçlar</h3>
         <div style="display:flex; gap:6px; margin-bottom:8px;">
-          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Kamyonet')">Kamyonet (100) – 10.000 TL</button>
-          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Kamyon')">Kamyon (500) – 50.000 TL</button>
-          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Tır')">Tır (2000) – 200.000 TL</button>
+          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Kamyon')">Kamyon (+100) – 250.000 TL</button>
+          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Tır')">Tır (+500) – 1.000.000 TL</button>
+          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Uçak')">Uçak (+2000) – 10.000.000 TL</button>
+          <button class="btn btn-secondary btn-sm" onclick="buyVehicle('Gemi')">Gemi (+10000) – 50.000.000 TL</button>
         </div>
+        <div class="hint-text">Araç fabrikaları üretimle araç kazandırır: Kamyon/Tır/Uçak/Gemi.</div>
+        <div id="capacity-summary" class="net-worth">Toplam Kapasite: 0</div>
         <div id="vehicle-list" class="hint-text">Araçlar yükleniyor...</div>
       </div>
       <div>
@@ -52,6 +55,8 @@ async function loadVehicles() {
   if (!res.ok) return;
   const rows = await res.json();
   const list = document.getElementById('vehicle-list');
+  const total = rows.reduce((a,v) => a + (v.capacity||0), 0);
+  document.getElementById('capacity-summary').textContent = 'Toplam Kapasite: ' + total;
   if (!rows.length) {
     list.textContent = 'Henüz aracınız yok.';
   } else {

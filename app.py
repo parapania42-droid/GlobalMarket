@@ -28,6 +28,22 @@ FACTORY_CONFIG = {
     "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik", "worker_capacity": 30},
     "plastic": {"name": "Plastik Fabrikası", "cost": 500000, "rate": 1.5, "capacity": 20, "unlock_lvl": 25, "type": "Plastik", "worker_capacity": 30},
     "electronics": {"name": "Elektronik Fabrikası", "cost": 1000000, "rate": 0.8, "capacity": 10, "unlock_lvl": 30, "type": "Elektronik", "worker_capacity": 30}
+    ,
+    # Orta Seviye
+    "glass": {"name": "Cam Fabrikası", "cost": 750000, "rate": 1.2, "capacity": 25, "unlock_lvl": 22, "type": "Cam", "worker_capacity": 20},
+    "chem": {"name": "Kimya Fabrikası", "cost": 900000, "rate": 1.4, "capacity": 25, "unlock_lvl": 24, "type": "Kimyasal", "worker_capacity": 25},
+    # Yüksek Seviye
+    "chip": {"name": "Çip Fabrikası", "cost": 2500000, "rate": 0.6, "capacity": 12, "unlock_lvl": 35, "type": "Çip", "worker_capacity": 30},
+    "battery": {"name": "Batarya Fabrikası", "cost": 3000000, "rate": 0.7, "capacity": 15, "unlock_lvl": 38, "type": "Batarya", "worker_capacity": 30},
+    # Premium Seviye
+    "car": {"name": "Otomobil Fabrikası", "cost": 10000000, "rate": 0.4, "capacity": 8, "unlock_lvl": 45, "type": "Otomobil", "worker_capacity": 35},
+    "smartphone": {"name": "Akıllı Telefon Fabrikası", "cost": 15000000, "rate": 0.5, "capacity": 10, "unlock_lvl": 48, "type": "Akıllı Telefon", "worker_capacity": 35},
+    "robot": {"name": "Robot Fabrikası", "cost": 20000000, "rate": 0.3, "capacity": 6, "unlock_lvl": 50, "type": "Robot", "worker_capacity": 40},
+    # Lojistik Araç Fabrikaları (araç üretir)
+    "truck_factory": {"name": "Kamyon Fabrikası", "cost": 5000000, "rate": 0.2, "capacity": 2, "unlock_lvl": 40, "type": "Vehicle:Kamyon", "worker_capacity": 20},
+    "tir_factory": {"name": "Tır Fabrikası", "cost": 8000000, "rate": 0.15, "capacity": 2, "unlock_lvl": 42, "type": "Vehicle:Tır", "worker_capacity": 20},
+    "plane_factory": {"name": "Kargo Uçağı Fabrikası", "cost": 20000000, "rate": 0.1, "capacity": 1, "unlock_lvl": 55, "type": "Vehicle:Uçak", "worker_capacity": 25},
+    "ship_factory": {"name": "Gemi Fabrikası", "cost": 50000000, "rate": 0.05, "capacity": 1, "unlock_lvl": 60, "type": "Vehicle:Gemi", "worker_capacity": 25}
 }
 
 # ---------------------------------------------------------
@@ -294,6 +310,8 @@ def get_user(username):
         if "factory_storage" not in u_data: u_data["factory_storage"] = {}
         if "factory_last_update" not in u_data: u_data["factory_last_update"] = {}
         if "factory_last_collect" not in u_data: u_data["factory_last_collect"] = {}
+        if "factory_run_start" not in u_data: u_data["factory_run_start"] = {}
+        if "factory_run_duration" not in u_data: u_data["factory_run_duration"] = {}
         if "net_worth" not in u_data: u_data["net_worth"] = 0
         if "xp" not in u_data: u_data["xp"] = 0
         if "level" not in u_data: u_data["level"] = 1
@@ -328,6 +346,8 @@ def create_user(username, password):
         "factory_storage": {},
         "factory_last_update": {},
         "factory_last_collect": {},
+        "factory_run_start": {},
+        "factory_run_duration": {},
         "factory_boosts": {},
         "net_worth": 1000,
         "mission": {"description": "İlk fabrikanı kur!", "target_qty": 1, "current_qty": 0, "reward": 500},
@@ -913,9 +933,10 @@ def api_logistics_buy_vehicle():
     data = request.json
     type_ = data.get('type')
     types = {
-        "Kamyonet": {"capacity": 100, "price": 10000},
-        "Kamyon": {"capacity": 500, "price": 50000},
-        "Tır": {"capacity": 2000, "price": 200000}
+        "Kamyon": {"capacity": 100, "price": 250000},
+        "Tır": {"capacity": 500, "price": 1000000},
+        "Uçak": {"capacity": 2000, "price": 10000000},
+        "Gemi": {"capacity": 10000, "price": 50000000}
     }
     if type_ not in types:
         return jsonify({"success": False, "message": "Geçersiz araç türü!"})
@@ -1354,6 +1375,16 @@ def api_factories():
         elapsed_hours = round((time.time() - last_collect) / 3600.0, 2)
         capacity = conf.get('worker_capacity', 0) * max(1, lvl)
         bonus_pct = int(0.05 * assigned * 100)
+        # Production countdown
+        run_start = u.get('factory_run_start', {}).get(fid)
+        run_dur_min = u.get('factory_run_duration', {}).get(fid)
+        remaining_seconds = None
+        collectable = False
+        production_duration_minutes = None
+        if run_start and run_dur_min:
+            production_duration_minutes = run_dur_min
+            remaining_seconds = max(0, int(run_dur_min*60 - (time.time() - run_start)))
+            collectable = remaining_seconds == 0
         rows.append({
             "type": fid,
             "name": conf['name'],
@@ -1365,6 +1396,9 @@ def api_factories():
             "bonus_pct": bonus_pct,
             "production_interval_hours": 3,
             "last_collect_hours_ago": elapsed_hours,
+            "production_duration_minutes": production_duration_minutes,
+            "remaining_seconds": remaining_seconds,
+            "collectable": collectable,
             "daily_income": daily_income
         })
     conn.close()
@@ -1380,6 +1414,11 @@ def api_factory_start():
         fr = u.get('factory_running', {})
         fr[fid] = True
         u['factory_running'] = fr
+        # start production run countdown
+        lvl = u.get('factories', {}).get(fid, 1)
+        duration_min = max(2, 10 - 2 * (int(lvl) - 1))
+        u.setdefault('factory_run_start', {})[fid] = time.time()
+        u.setdefault('factory_run_duration', {})[fid] = duration_min
         save_user(u)
     return jsonify({"success": True, "message": "Üretim başlatıldı"})
 
@@ -1393,6 +1432,13 @@ def api_factory_stop():
         fr = u.get('factory_running', {})
         fr[fid] = False
         u['factory_running'] = fr
+        # clear production run
+        rs = u.get('factory_run_start', {})
+        rd = u.get('factory_run_duration', {})
+        if fid in rs: del rs[fid]
+        if fid in rd: del rd[fid]
+        u['factory_run_start'] = rs
+        u['factory_run_duration'] = rd
         save_user(u)
     return jsonify({"success": True, "message": "Üretim durduruldu"})
 
@@ -1485,7 +1531,20 @@ def collect_factory():
             save_user(u)
             return jsonify({"success": False, "message": "Üretim henüz birikmedi!"})
         rtype = conf['type']
-        u['inventory'][rtype] = u['inventory'].get(rtype, 0) + produced
+        if rtype.startswith('Vehicle:') and u.get('factory_run_start', {}).get(fid):
+            kind = rtype.split(':',1)[1]
+            capacities = {"Kamyon": 500, "Tır": 1000, "Uçak": 2000, "Gemi": 10000}
+            cap = capacities.get(kind, 100)
+            conn = get_db_connection()
+            conn.execute('INSERT INTO vehicles (owner, type, capacity, created_at) VALUES (?, ?, ?, ?)',
+                         (u['username'], kind, cap, time.time()))
+            conn.commit()
+            conn.close()
+            # reset run to require next start
+            u['factory_run_start'].pop(fid, None)
+            u['factory_run_duration'].pop(fid, None)
+        else:
+            u['inventory'][rtype] = u['inventory'].get(rtype, 0) + produced
         u.setdefault('factory_last_collect', {})[fid] = now
         # XP reward proportional
         u['xp'] += produced

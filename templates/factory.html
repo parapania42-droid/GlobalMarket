@@ -38,9 +38,10 @@ async function loadFactories() {
           <div>İşçi: <strong>${f.worker_count}</strong> / Kapasite: <strong>${f.worker_capacity}</strong></div>
           <div>Günlük Gelir: <strong>${f.daily_income} TL</strong></div>
           <div>Durum: <strong>${f.running ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
-          <div>Üretim süresi: <strong>3 saat</strong></div>
+          <div>Üretim süresi: <strong>${f.production_duration_minutes || '-'} dk</strong></div>
           <div>Son üretim: <strong>${f.last_collect_hours_ago} saat önce</strong></div>
           <div>Üretim bonusu: <strong>%${f.bonus_pct}</strong></div>
+          <div>Kalan süre: <strong id="remain-${f.type}">${(f.collectable ? 'Toplanabilir' : formatRemain(f.remaining_seconds))}</strong></div>
         </div>
         <div style="display:flex; gap:5px; margin-top:8px;">
           <button class="btn btn-success btn-sm" onclick="factoryStart('${f.type}')">Üretimi Başlat</button>
@@ -55,6 +56,20 @@ async function loadFactories() {
         </div>
       </div>
     `).join('');
+    // Per-second countdown update
+    data.forEach(f => {
+      const el = document.getElementById('remain-'+f.type);
+      if (!el) return;
+      if (typeof f.remaining_seconds !== 'number' || f.remaining_seconds === null) return;
+      const endMs = Date.now() + f.remaining_seconds * 1000;
+      const update = () => {
+        const left = Math.max(0, endMs - Date.now());
+        const s = Math.floor(left / 1000);
+        el.textContent = s <= 0 ? 'Toplanabilir' : formatRemain(s);
+        if (s > 0) requestAnimationFrame(update);
+      };
+      update();
+    });
 }
 document.addEventListener('DOMContentLoaded', loadFactories);
 
@@ -74,6 +89,11 @@ async function buyWorkers() {
   const res = await fetch('/api/workers/buy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({count})});
   const d = await res.json(); alert(d.message || '');
   loadFactories();
+}
+function formatRemain(sec) {
+  if (typeof sec !== 'number' || sec === null) return '--:--';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + ' dk ' + s + ' sn';
 }
 async function assignWorkers(type) {
   const count = parseInt(document.getElementById('assign-'+type).value || '0');
