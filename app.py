@@ -4,11 +4,14 @@ import time
 import random
 import threading
 import os
+from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'global_market_secret_key_v2'
+app.config["SECRET_KEY"] = "globalmarket_secret_key"
+app.config["SESSION_PERMANENT"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 # Concurrency lock
 lock = threading.Lock()
@@ -339,7 +342,7 @@ def calculate_production(user):
 
 @app.route('/')
 def index():
-    if 'username' in session:
+    if 'user_id' in session:
         return redirect(url_for('game'))
     return redirect(url_for('login_page'))
 
@@ -357,6 +360,8 @@ def login_page():
     conn.close()
     
     if user and check_password_hash(user['password_hash'], password):
+        session.permanent = True
+        session['user_id'] = username
         session['username'] = username
         return jsonify({"success": True})
     
@@ -378,11 +383,12 @@ def register():
 @app.route('/logout')
 def logout():
     session.pop('username', None)
+    session.pop('user_id', None)
     return redirect(url_for('login_page'))
 
 @app.route('/game')
 def game():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('game.html', active_page='game')
 
@@ -396,43 +402,43 @@ def guide_page():
 
 @app.route('/market')
 def market_page():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('market.html', active_page='market')
 @app.route('/factory')
 def factory_page():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('factory.html', active_page='factory')
 
 @app.route('/resources')
 def resources_page():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('resources.html', active_page='resources')
 
 @app.route('/land')
 def land_page():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('land.html', active_page='land')
 
 @app.route('/workers')
 def workers_page():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('workers.html', active_page='workers')
 
 @app.route('/realestate')
 def realestate_page():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('realestate.html', active_page='realestate')
 
 @app.route('/api/me')
 def api_me():
-    if 'username' not in session: return jsonify({}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({}), 401
+    u = get_user(session['user_id'])
     if not u: return jsonify({}), 401
     if u.get("is_banned"):
         return jsonify({"message": "Hesabınız yasaklandı"}), 403
@@ -468,9 +474,9 @@ def api_me():
 
 @app.route('/api/land/list')
 def api_land_list():
-    if 'username' not in session: return jsonify({}), 401
+    if 'user_id' not in session: return jsonify({}), 401
     conn = get_db_connection()
-    rows = conn.execute('SELECT * FROM lands WHERE owner = ?', (session['username'],)).fetchall()
+    rows = conn.execute('SELECT * FROM lands WHERE owner = ?', (session['user_id'],)).fetchall()
     conn.close()
     
     owned = [dict(r) for r in rows]
@@ -485,8 +491,8 @@ def api_land_list():
 
 @app.route('/api/land/buy', methods=['POST'])
 def api_land_buy():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     data = request.json
     type_ = data.get('type')
     size = data.get('size')
@@ -527,8 +533,8 @@ def api_land_buy():
 
 @app.route('/api/workers/hire', methods=['POST'])
 def api_workers_hire():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     data = request.json
     type_ = data.get('type')
     count = int(data.get('count', 0))
@@ -560,8 +566,8 @@ def api_workers_hire():
 
 @app.route('/api/workers/fire', methods=['POST'])
 def api_workers_fire():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     data = request.json
     worker_id = int(data.get('id', 0))
     
@@ -590,8 +596,8 @@ def api_workers_fire():
 # ---------------------------------------------------------
 @app.route('/api/economy/stats')
 def api_economy_stats():
-    if 'username' not in session: return jsonify({}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({}), 401
+    u = get_user(session['user_id'])
     conn = get_db_connection()
     land_count = conn.execute('SELECT COUNT(*) as c FROM lands WHERE owner = ?', (u['username'],)).fetchone()['c']
     worker_count = conn.execute('SELECT COALESCE(SUM(count),0) as c FROM workers WHERE owner = ?', (u['username'],)).fetchone()['c']
@@ -675,8 +681,8 @@ def calculate_economy(user):
 
 @app.route('/api/resources')
 def api_resources():
-    if 'username' not in session: return jsonify({}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({}), 401
+    u = get_user(session['user_id'])
     with lock:
         calculate_economy(u)
         save_user(u)
@@ -772,8 +778,8 @@ def api_news():
 
 @app.route('/buy', methods=['POST'])
 def buy():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     data = request.json
     
     # Implement buy from market
@@ -823,8 +829,8 @@ def buy():
 
 @app.route('/sell', methods=['POST'])
 def sell():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     data = request.json
     
     item = data.get('item')
@@ -853,8 +859,8 @@ def sell():
 # Factory Actions
 @app.route('/api/factory_status/<fid>')
 def factory_status(fid):
-    if 'username' not in session: return jsonify({}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({}), 401
+    u = get_user(session['user_id'])
     
     conf = FACTORY_CONFIG.get(fid)
     if not conf: return jsonify({}), 404
@@ -886,8 +892,8 @@ def factory_status(fid):
 
 @app.route('/api/upgrade_factory/<fid>', methods=['POST'])
 def upgrade_factory(fid):
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     conf = FACTORY_CONFIG.get(fid)
     if not conf: return jsonify({"success": False}), 404
     
@@ -913,8 +919,8 @@ def upgrade_factory(fid):
 
 @app.route('/api/factories')
 def api_factories():
-    if 'username' not in session: return jsonify([]), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify([]), 401
+    u = get_user(session['user_id'])
     conn = get_db_connection()
     rows = []
     for fid, conf in FACTORY_CONFIG.items():
@@ -937,8 +943,8 @@ def api_factories():
 
 @app.route('/api/factory/start', methods=['POST'])
 def api_factory_start():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     fid = request.json.get('type')
     if fid not in FACTORY_CONFIG: return jsonify({"success": False, "message": "Geçersiz fabrika!"})
     with lock:
@@ -950,8 +956,8 @@ def api_factory_start():
 
 @app.route('/api/factory/stop', methods=['POST'])
 def api_factory_stop():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     fid = request.json.get('type')
     if fid not in FACTORY_CONFIG: return jsonify({"success": False, "message": "Geçersiz fabrika!"})
     with lock:
@@ -963,8 +969,8 @@ def api_factory_stop():
 
 @app.route('/api/factory/assign_workers', methods=['POST'])
 def api_factory_assign_workers():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     fid = request.json.get('type')
     count = int(request.json.get('count', 0))
     if fid not in FACTORY_CONFIG or count <= 0:
@@ -982,8 +988,8 @@ def api_factory_assign_workers():
 
 @app.route('/api/factory/unassign_workers', methods=['POST'])
 def api_factory_unassign_workers():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     fid = request.json.get('type')
     count = int(request.json.get('count', 0))
     if fid not in FACTORY_CONFIG or count <= 0:
@@ -1001,8 +1007,8 @@ def api_factory_unassign_workers():
 
 @app.route('/api/factory/collect', methods=['POST'])
 def collect_factory():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     data = request.json
     fid = data.get('factory_id')
     
@@ -1028,8 +1034,8 @@ def collect_factory():
 
 @app.route('/api/factory/boost', methods=['POST'])
 def boost_factory():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    u = get_user(session['username'])
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
     data = request.json
     fid = data.get('factory_id')
     
@@ -1056,11 +1062,11 @@ def boost_factory():
 def api_chat():
     conn = get_db_connection()
     if request.method == 'POST':
-        if 'username' not in session: return jsonify({}), 401
+        if 'user_id' not in session: return jsonify({}), 401
         msg = request.json.get('message')
         if msg:
             conn.execute('INSERT INTO chat (username, message, time) VALUES (?, ?, ?)',
-                         (session['username'], msg, time.strftime('%H:%M')))
+                         (session['user_id'], msg, time.strftime('%H:%M')))
             conn.commit()
         return jsonify({"success": True})
     else:
@@ -1257,7 +1263,7 @@ def admin_page():
     return render_template('admin.html', users=users, stats=stats, active_page='admin')
 
 def _admin_guard():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
     if session['username'] != 'Paramen42':
         return redirect(url_for('game'))
