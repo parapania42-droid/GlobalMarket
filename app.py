@@ -182,6 +182,14 @@ def init_db():
             )
         ''')
         
+        # System State table for global events and settings
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS system_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ''')
+        
         # Factory Assignments
         c.execute('''
             CREATE TABLE IF NOT EXISTS factory_assignments (
@@ -253,6 +261,72 @@ def init_db():
 # Initialize DB immediately for Gunicorn/Render
 init_db()
  
+# ---------------------------------------------------------
+# GLOBAL EVENT SYSTEM
+# ---------------------------------------------------------
+def _get_current_event():
+    conn = get_db_connection()
+    row = conn.execute("SELECT value FROM system_state WHERE key = 'current_event'").fetchone()
+    conn.close()
+    if not row:
+        return None
+    try:
+        ev = json.loads(row['value'])
+        if time.time() >= ev.get('end_time', 0):
+            return None
+        return ev
+    except Exception:
+        return None
+
+def _set_current_event(ev):
+    conn = get_db_connection()
+    conn.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES ('current_event', ?)", (json.dumps(ev),))
+    conn.commit()
+    conn.close()
+
+def _clear_current_event():
+    conn = get_db_connection()
+    conn.execute("DELETE FROM system_state WHERE key = 'current_event'")
+    conn.commit()
+    conn.close()
+
+def _start_random_event():
+    now = time.time()
+    duration = random.randint(1200, 3600)
+    end_time = now + duration
+    opps = [
+        {"title": "İnşaat Patlaması", "target": {"type": "item", "name": "Taş"}, "price_multiplier": 1.5},
+        {"title": "Teknoloji Talebi", "target": {"type": "item", "name": "Elektronik"}, "price_multiplier": 1.3},
+        {"title": "İhracat Fırsatı", "target": {"type": "item", "name": "Odun"}, "price_multiplier": 1.4},
+    ]
+    crises = [
+        {"title": "Yakıt Krizi", "target": {"type": "logistics"}, "logistics_cost_multiplier": 1.3},
+        {"title": "Fabrika Arızaları", "target": {"type": "production"}, "production_multiplier": 0.8},
+        {"title": "Ekonomik Daralma", "target": {"type": "prices_all"}, "price_multiplier": 0.75},
+    ]
+    pool = opps + crises
+    ev = random.choice(pool)
+    ev['end_time'] = end_time
+    ev['started_at'] = now
+    _set_current_event(ev)
+
+def _event_loop():
+    while True:
+        try:
+            ev = _get_current_event()
+            if ev and time.time() >= ev.get('end_time', 0):
+                _clear_current_event()
+                ev = None
+            if not ev:
+                if random.random() < 0.05:
+                    _start_random_event()
+        except Exception:
+            pass
+        time.sleep(30)
+
+t = threading.Thread(target=_event_loop, daemon=True)
+t.start()
+
 # ---------------------------------------------------------
 # BOT SELLERS BACKGROUND TASK
 # ---------------------------------------------------------
@@ -846,6 +920,17 @@ def api_workers_buy():
             return jsonify({"success": False, "message": "Yetersiz bakiye!"})
         u['money'] -= cost
         u['workers_available'] = u.get('workers_available', 0) + count
+        # Mission progress: workers buy
+        m = u.get('mission') or {}
+        if m.get('kind') == 'workers':
+            m['current_qty'] = int(m.get('current_qty', 0)) + count
+            if m['current_qty'] >= m.get('target_qty', 5):
+                u['money'] += int(m.get('reward', 0))
+                u['xp'] += int(m.get('reward', 0) // 2)
+                # Loop back to upgrade mission
+                u['mission'] = {"kind": "upgrade", "description": "1 fabrika yükselt!", "target_qty": 1, "current_qty": 0, "reward": 1000}
+            else:
+                u['mission'] = m
         save_user(u)
     conn = get_db_connection()
     conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
@@ -1005,6 +1090,9 @@ def api_logistics_create_task():
         u['inventory'][item] = current - amount
         save_user(u)
         eta_delta = 600 if city_scope == 'same' else 1800
+        ev = _get_current_event()
+        if ev and ev.get('target', {}).get('type') == 'logistics':
+            eta_delta = int(eta_delta * float(ev.get('logistics_cost_multiplier', 1.0)))
         eta = time.time() + eta_delta
         conn.execute('INSERT INTO logistics_tasks (owner, vehicle_id, item, amount, destination, city_scope, eta, delivered, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                      (u['username'], vehicle_id, item, amount, destination, city_scope, eta, 0, time.time()))
@@ -1114,8 +1202,19 @@ def api_inventory():
     if 'user_id' not in session: return jsonify([]), 401
     u = get_user(session['user_id'])
     conn = get_db_connection()
-    prices = {r['item']: r['price'] for r in conn.execute('SELECT item, price FROM prices').fetchall()}
+    rows = conn.execute('SELECT item, price FROM prices').fetchall()
     conn.close()
+    ev = _get_current_event()
+    prices = {}
+    for r in rows:
+        p = r['price']
+        name = r['item']
+        if ev:
+            if ev.get('target', {}).get('type') == 'item' and ev['target'].get('name') == name:
+                p = max(1.0, p * ev.get('price_multiplier', 1.0))
+            elif ev.get('target', {}).get('type') == 'prices_all':
+                p = max(1.0, p * ev.get('price_multiplier', 1.0))
+        prices[name] = p
     items = []
     total_value = 0
     for name, qty in u.get('inventory', {}).items():
@@ -1167,11 +1266,13 @@ def api_market():
     }
     
     # Simulate Economy
-    economy = {
-        "event_message": "Piyasa Stabil",
-        "multiplier": 1.0,
-        "trend": "stable"
-    }
+    ev = _get_current_event()
+    economy = {"event_message": "Piyasa Stabil", "multiplier": 1.0, "trend": "stable"}
+    if ev:
+        ttl = ev.get('title', 'Olay')
+        end_time = ev.get('end_time')
+        mult = ev.get('price_multiplier') or ev.get('production_multiplier') or ev.get('logistics_cost_multiplier') or 1.0
+        economy = {"event_message": f"{ttl}", "multiplier": mult, "trend": "up" if mult > 1 else ("down" if mult < 1 else "stable"), "end_time": end_time}
     
     return jsonify({
         "listings": [dict(ix) for ix in listings],
@@ -1185,7 +1286,17 @@ def api_market_prices():
     conn = get_db_connection()
     rows = conn.execute('SELECT * FROM prices').fetchall()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    ev = _get_current_event()
+    out = []
+    for r in rows:
+        pr = dict(r)
+        if ev:
+            if ev.get('target', {}).get('type') == 'item' and ev['target'].get('name') == pr['item']:
+                pr['price'] = max(1.0, pr['price'] * ev.get('price_multiplier', 1.0))
+            elif ev.get('target', {}).get('type') == 'prices_all':
+                pr['price'] = max(1.0, pr['price'] * ev.get('price_multiplier', 1.0))
+        out.append(pr)
+    return jsonify(out)
 
 @app.route('/api/news')
 def api_news():
@@ -1246,6 +1357,11 @@ def buy():
         u['money'] -= cost
         item_name = listing['item']
         u['inventory'][item_name] = u['inventory'].get(item_name, 0) + qty
+        # Event participation bonus XP
+        ev = _get_current_event()
+        if ev:
+            u['xp'] = u.get('xp', 0) + 5
+            check_level_up(u)
         save_user(u)
         
         # Update Seller
@@ -1283,6 +1399,11 @@ def sell():
             return jsonify({"success": False, "message": "Yetersiz stok!"})
             
         u['inventory'][item] -= qty
+        # Event participation bonus XP
+        ev = _get_current_event()
+        if ev:
+            u['xp'] = u.get('xp', 0) + 5
+            check_level_up(u)
         save_user(u)
         
         conn = get_db_connection()
@@ -1350,6 +1471,16 @@ def upgrade_factory(fid):
              
         u['money'] -= cost
         u['factories'][fid] = next_lvl
+        # Mission progress for upgrade
+        m = u.get('mission') or {}
+        if m.get('kind') == 'upgrade':
+            m['current_qty'] = int(m.get('current_qty', 0)) + 1
+            if m['current_qty'] >= m.get('target_qty', 1):
+                u['money'] += int(m.get('reward', 0))
+                u['xp'] += int(m.get('reward', 0) // 2)
+                u['mission'] = {"kind": "produce", "description": "100 ürün üret!", "target_qty": 100, "current_qty": 0, "reward": 1000}
+            else:
+                u['mission'] = m
         save_user(u)
     
     # Compute new production metrics for response
@@ -1380,7 +1511,11 @@ def api_factories():
         assigned = conn.execute('SELECT COALESCE(SUM(count),0) AS c FROM factory_assignments WHERE owner = ? AND factory_type = ?', 
                                 (u['username'], fid)).fetchone()['c']
         # rate per hour
-        rate_per_hour = int(conf['rate'] * max(1,lvl) * (1 + 0.05 * assigned) * (1 if running else 0))
+        ev = _get_current_event()
+        prod_mult = 1.0
+        if ev and ev.get('target', {}).get('type') == 'production':
+            prod_mult = float(ev.get('production_multiplier', 1.0))
+        rate_per_hour = int(conf['rate'] * max(1,lvl) * (1 + 0.05 * assigned) * prod_mult * (1 if running else 0))
         # approximate price from global prices
         pr = conn.execute('SELECT price FROM prices WHERE item = ?', (conf['type'],)).fetchone()
         price = pr['price'] if pr else 0
@@ -1537,7 +1672,11 @@ def collect_factory():
         running = bool(u.get('factory_running', {}).get(fid, True))
         # Boost
         is_boosted = u.get("factory_boosts", {}).get(fid, 0) > now
-        rate_per_hour = conf["rate"] * max(1, level) * worker_mult * (2 if is_boosted else 1) * (1 if running else 0)
+        ev = _get_current_event()
+        prod_mult = 1.0
+        if ev and ev.get('target', {}).get('type') == 'production':
+            prod_mult = float(ev.get('production_multiplier', 1.0))
+        rate_per_hour = conf["rate"] * max(1, level) * worker_mult * (2 if is_boosted else 1) * prod_mult * (1 if running else 0)
         produced = int((elapsed / 10800.0) * rate_per_hour)
         if produced <= 0:
             # Update last collect anyway to avoid zero spam on tiny intervals
@@ -1559,9 +1698,23 @@ def collect_factory():
             u['factory_run_duration'].pop(fid, None)
         else:
             u['inventory'][rtype] = u['inventory'].get(rtype, 0) + produced
+        # Random critical bonus +20% chance
+        if random.random() < 0.1:
+            produced = int(produced * 1.2)
         u.setdefault('factory_last_collect', {})[fid] = now
         # XP reward proportional
         u['xp'] += produced
+        # Mission progress: production
+        m = u.get('mission') or {}
+        if m.get('kind') == 'produce':
+            m['current_qty'] = int(m.get('current_qty', 0)) + int(produced)
+            if m['current_qty'] >= m.get('target_qty', 100):
+                u['money'] += int(m.get('reward', 0))
+                u['xp'] += int(m.get('reward', 0) // 2)
+                # Next mission: buy workers
+                u['mission'] = {"kind": "workers", "description": "5 işçi satın al!", "target_qty": 5, "current_qty": 0, "reward": 1500}
+            else:
+                u['mission'] = m
         check_level_up(u)
         save_user(u)
     return jsonify({"success": True, "message": f"{produced} {conf['type']} toplandı!"})

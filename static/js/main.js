@@ -8,6 +8,7 @@ let currentSort = 'time';
 // Previous States for Diff/Animation
 let previousInventory = {};
 let previousMarketPrices = {};
+let previousMoney = 0;
 
 // Timers
 let __factoryModalTimer = null;
@@ -37,6 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (path === '/leaderboard') {
         fetchLeaderboard();
+        fetchUserData();
+        setInterval(fetchUserData, 10000);
     } else if (path === '/game') {
         startPolling();
         
@@ -54,6 +57,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setInterval(fetchPricesHome, 10000);
         setInterval(fetchNewsHome, 60000);
         setInterval(fetchLeaderboardHome, 15000);
+    } else {
+        fetchUserData();
+        setInterval(fetchUserData, 10000);
     }
 });
 
@@ -224,7 +230,21 @@ async function fetchUserData() {
 
 function renderHUD(player) {
     document.getElementById('hud-username').textContent = player.username;
-    document.getElementById('hud-money').textContent = formatMoney(player.money);
+    const moneyEl = document.getElementById('hud-money');
+    const oldMoney = previousMoney || 0;
+    moneyEl.textContent = formatMoney(player.money);
+    if (player.money > oldMoney) {
+        const diff = player.money - oldMoney;
+        const rect = moneyEl.getBoundingClientRect();
+        const float = document.createElement('div');
+        float.className = 'money-float';
+        float.textContent = `+${new Intl.NumberFormat('tr-TR').format(diff)} TL`;
+        float.style.left = `${rect.left}px`;
+        float.style.top = `${rect.top}px`;
+        document.body.appendChild(float);
+        setTimeout(() => { float.remove(); }, 1000);
+    }
+    previousMoney = player.money;
     document.getElementById('hud-level').textContent = player.level;
     document.getElementById('hud-xp').textContent = `${player.xp} / ${player.level * 1000}`;
     
@@ -404,7 +424,21 @@ function renderMarket(data) {
 
     // Update Economy Banner
     if (banner && data.economy) {
-        banner.textContent = `${data.economy.event_message} (Çarpan: x${data.economy.multiplier})`;
+        if (__eventTimer) { clearInterval(__eventTimer); __eventTimer = null; }
+        const endTs = data.economy.end_time || 0;
+        const baseText = `${data.economy.event_message} (x${data.economy.multiplier})`;
+        if (endTs && endTs > (Date.now()/1000)) {
+            const updateBanner = () => {
+                const left = Math.max(0, Math.floor(endTs - (Date.now()/1000)));
+                const m = Math.floor(left/60);
+                const s = left%60;
+                banner.textContent = `🔥 ${baseText} – ${m}:${s.toString().padStart(2,'0')} KALDI`;
+            };
+            updateBanner();
+            __eventTimer = setInterval(updateBanner, 1000);
+        } else {
+            banner.textContent = baseText;
+        }
         if (data.economy.trend === 'up') {
             banner.style.color = 'var(--success)';
             banner.innerHTML += ' 📈';
