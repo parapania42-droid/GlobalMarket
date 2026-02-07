@@ -177,6 +177,20 @@ def init_db():
             )
         ''')
         
+        # Marketplace Products
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS marketplace_products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                seller TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                price INTEGER NOT NULL,
+                stock INTEGER NOT NULL,
+                is_bot INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
         # Seed default prices if empty
         items = ["Odun","Taş","Demir","Kömür","Buğday","Çelik","Plastik","Elektronik"]
         base_prices = {
@@ -195,6 +209,46 @@ def init_db():
 
 # Initialize DB immediately for Gunicorn/Render
 init_db()
+ 
+# ---------------------------------------------------------
+# BOT SELLERS BACKGROUND TASK
+# ---------------------------------------------------------
+def _bot_price_for(name):
+    base = _avg_price_for(name)
+    if base <= 0:
+        # fallback to global prices if exists
+        conn = get_db_connection()
+        pr = conn.execute('SELECT price FROM prices WHERE item = ?', (name,)).fetchone()
+        conn.close()
+        base = int(pr['price']) if pr else random.randint(20, 200)
+    # +/- 10-30%
+    pct = random.uniform(0.10, 0.30)
+    updown = 1 if random.random() < 0.5 else -1
+    return max(1, int(base * (1 + updown * pct)))
+
+def start_bot_sellers():
+    def run():
+        bot_names = ["MarketPro","TradeX","GlobalSeller","MercuryMart","AtlasTrade","NeoBazaar","PrimeGoods","VeloShop"]
+        items = ["Odun","Taş","Demir","Kömür","Çelik","Plastik","Elektronik","Gıda"]
+        while True:
+            try:
+                seller = random.choice(bot_names)
+                name = random.choice(items)
+                price = _bot_price_for(name)
+                stock = random.randint(5, 20)
+                desc = "Otomatik satıcı ürünü"
+                conn = get_db_connection()
+                conn.execute('INSERT INTO marketplace_products (seller, name, description, price, stock, is_bot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                             (seller, name, desc, price, stock, 1, time.time()))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+            time.sleep(random.randint(90, 180))
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+
+start_bot_sellers()
 
 def get_user(username):
     conn = get_db_connection()
@@ -405,6 +459,12 @@ def market_page():
     if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('market.html', active_page='market')
+    
+@app.route('/marketplace')
+def marketplace_page():
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('marketplace.html', active_page='market')
 @app.route('/factory')
 def factory_page():
     if 'user_id' not in session:
@@ -434,6 +494,171 @@ def realestate_page():
     if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('realestate.html', active_page='realestate')
+
+# ---------------------------------------------------------
+# MARKETPLACE API
+# ---------------------------------------------------------
+def _avg_price_for(name):
+    conn = get_db_connection()
+    row = conn.execute('SELECT AVG(price) AS avgp FROM marketplace_products WHERE name = ? AND is_bot = 0', (name,)).fetchone()
+    conn.close()
+    return int(row['avgp']) if row and row['avgp'] else 0
+
+@app.route('/api/marketplace/list')
+def api_marketplace_list():
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM marketplace_products ORDER BY created_at DESC').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/marketplace/add', methods=['POST'])
+def api_marketplace_add():
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
+    data = request.json
+    name = (data.get('name') or '').strip()
+    desc = (data.get('description') or '').strip()
+    price = int(data.get('price', 0))
+    stock = int(data.get('stock', 0))
+    if not name or price <= 0 or stock <= 0:
+        return jsonify({"success": False, "message": "Geçersiz bilgi!"})
+    conn = get_db_connection()
+    conn.execute('INSERT INTO marketplace_products (seller, name, description, price, stock, is_bot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                 (u['username'], name, desc, price, stock, 0, time.time()))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Ürün eklendi!"})
+
+@app.route('/api/marketplace/edit', methods=['POST'])
+def api_marketplace_edit():
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
+    data = request.json
+    pid = int(data.get('id', 0))
+    name = (data.get('name') or '').strip()
+    desc = (data.get('description') or '').strip()
+    price = int(data.get('price', 0))
+    stock = int(data.get('stock', 0))
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM marketplace_products WHERE id = ?', (pid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "message": "Ürün bulunamadı!"})
+    if row['seller'] != u['username']:
+        conn.close()
+        return jsonify({"success": False, "message": "Yetkisiz işlem!"})
+    if price <= 0 or stock < 0:
+        conn.close()
+        return jsonify({"success": False, "message": "Geçersiz bilgi!"})
+    conn.execute('UPDATE marketplace_products SET name = ?, description = ?, price = ?, stock = ? WHERE id = ?',
+                 (name or row['name'], desc or row['description'], price, stock, pid))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Ürün güncellendi!"})
+
+@app.route('/api/marketplace/delete', methods=['POST'])
+def api_marketplace_delete():
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['user_id'])
+    data = request.json
+    pid = int(data.get('id', 0))
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM marketplace_products WHERE id = ?', (pid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "message": "Ürün bulunamadı!"})
+    if row['seller'] != u['username']:
+        conn.close()
+        return jsonify({"success": False, "message": "Yetkisiz işlem!"})
+    conn.execute('DELETE FROM marketplace_products WHERE id = ?', (pid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Ürün silindi!"})
+
+@app.route('/api/marketplace/buy', methods=['POST'])
+def api_marketplace_buy():
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    buyer = get_user(session['user_id'])
+    data = request.json
+    pid = int(data.get('id', 0))
+    qty = int(data.get('qty', 0))
+    if qty <= 0:
+        return jsonify({"success": False, "message": "Geçersiz adet!"})
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM marketplace_products WHERE id = ?', (pid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "message": "Ürün bulunamadı!"})
+    if row['stock'] < qty:
+        conn.close()
+        return jsonify({"success": False, "message": "Yetersiz stok!"})
+    cost = row['price'] * qty
+    with lock:
+        if buyer['money'] < cost:
+            conn.close()
+            return jsonify({"success": False, "message": "Yetersiz bakiye!"})
+        buyer['money'] -= cost
+        buyer['inventory'][row['name']] = buyer['inventory'].get(row['name'], 0) + qty
+        save_user(buyer)
+        seller = get_user(row['seller'])
+        if seller:
+            seller['money'] += cost
+            save_user(seller)
+        new_stock = row['stock'] - qty
+        if new_stock <= 0:
+            conn.execute('DELETE FROM marketplace_products WHERE id = ?', (pid,))
+        else:
+            conn.execute('UPDATE marketplace_products SET stock = ? WHERE id = ?', (new_stock, pid))
+        conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                     (row['seller'], 'marketplace_buy', cost, time.time(), json.dumps({"product_id": pid, "name": row['name'], "price": row['price'], "qty": qty, "buyer": buyer['username']})))
+        conn.commit()
+        conn.close()
+    return jsonify({"success": True, "message": "Satın alındı!"})
+
+@app.route('/api/marketplace/avg_price')
+def api_marketplace_avg():
+    name = request.args.get('name', '').strip()
+    if not name:
+        return jsonify({"avg": 0})
+    return jsonify({"avg": _avg_price_for(name)})
+
+@app.route('/api/marketplace/price_hint')
+def api_marketplace_price_hint():
+    name = request.args.get('name', '').strip()
+    if not name:
+        return jsonify({"avg": 0, "trend": "stable"})
+    avg = _avg_price_for(name)
+    conn = get_db_connection()
+    since = time.time() - 7*24*3600
+    rows = conn.execute("SELECT meta FROM transactions WHERE type = 'marketplace_buy' AND time >= ?", (since,)).fetchall()
+    conn.close()
+    sales = 0
+    for r in rows:
+        try:
+            m = json.loads(r['meta'])
+            if m.get('name') == name:
+                sales += 1
+        except Exception:
+            continue
+    # Simple trend: >10 sales => up, <3 sales => down
+    trend = "stable"
+    if sales > 10: trend = "up"
+    elif sales < 3: trend = "down"
+    return jsonify({"avg": avg, "trend": trend, "sales": sales})
+@app.route('/api/marketplace/top_sellers')
+def api_marketplace_top_sellers():
+    conn = get_db_connection()
+    since = time.time() - 7*24*3600
+    rows = conn.execute("SELECT owner, COUNT(*) AS c, SUM(amount) AS total FROM transactions WHERE type = 'marketplace_buy' AND time >= ? GROUP BY owner ORDER BY c DESC LIMIT 10", (since,)).fetchall()
+    conn.close()
+    return jsonify([{"seller": r['owner'], "sales": r['c'], "revenue": r['total']} for r in rows])
+
+@app.route('/api/marketplace/recent_sales')
+def api_marketplace_recent_sales():
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM transactions WHERE type = 'marketplace_buy' ORDER BY time DESC LIMIT 10").fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
 
 @app.route('/api/me')
 def api_me():
@@ -1063,12 +1288,29 @@ def api_chat():
     conn = get_db_connection()
     if request.method == 'POST':
         if 'user_id' not in session: return jsonify({}), 401
-        msg = request.json.get('message')
+        u = get_user(session['user_id'])
+        now = time.time()
+        if u.get('chat_mute_until', 0) > now:
+            return jsonify({"success": False, "message": "Chat geçici olarak engellendi"}), 403
+        msg = (request.json.get('message') or '').strip()
         if msg:
+            banned = ["salak","aptal","küfür","yarrak","orospu","piç","lanet","fuck","shit"]
+            moderated = False
+            low = msg.lower()
+            for w in banned:
+                if w in low:
+                    moderated = True
+                    msg = msg.lower().replace(w, "***")
+            if moderated:
+                u['chat_violations'] = int(u.get('chat_violations', 0)) + 1
+                if u['chat_violations'] >= 3:
+                    u['chat_mute_until'] = now + 300
+                    u['chat_violations'] = 0
+                save_user(u)
             conn.execute('INSERT INTO chat (username, message, time) VALUES (?, ?, ?)',
-                         (session['user_id'], msg, time.strftime('%H:%M')))
+                         (u['username'], msg, time.strftime('%H:%M')))
             conn.commit()
-        return jsonify({"success": True})
+        return jsonify({"success": True, "moderated": moderated})
     else:
         msgs = conn.execute('SELECT * FROM chat ORDER BY id DESC LIMIT 50').fetchall()
         # Return reversed (oldest first)

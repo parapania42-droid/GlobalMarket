@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+  <div class="card">
+    <div class="card-header">
+      <h2>💰 Genel Pazar (Marketplace)</h2>
+      <button class="btn btn-primary btn-sm" onclick="toggleAddForm()">Ürün Ekle</button>
+    </div>
+    <div id="add-form" style="display:none; margin-top:10px;">
+      <div class="form">
+        <label>Ürün adı</label>
+        <input id="mp-name" class="form-input" placeholder="Örn: Elektronik">
+        <div id="mp-hint" class="hint-text">Ortalama fiyat: -</div>
+        <label>Açıklama</label>
+        <input id="mp-desc" class="form-input" placeholder="Kısa açıklama">
+        <div class="input-group">
+          <input id="mp-price" type="number" class="form-input" placeholder="Fiyat">
+          <input id="mp-stock" type="number" class="form-input" placeholder="Stok">
+        </div>
+        <button class="btn btn-success" onclick="addProduct()">Kaydet</button>
+      </div>
+    </div>
+    <div id="mp-list" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>🏆 En Çok Satanlar</h3></div>
+    <div id="mp-top-sellers"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>🧾 Son Satışlar</h3></div>
+    <div id="mp-recent"></div>
+  </div>
+</div>
+
+<script>
+function toggleAddForm() {
+  const f = document.getElementById('add-form');
+  f.style.display = (f.style.display === 'none' ? 'block' : 'none');
+}
+async function refreshHint() {
+  const name = document.getElementById('mp-name').value.trim();
+  const hintEl = document.getElementById('mp-hint');
+  if (!name) { hintEl.textContent = 'Ortalama fiyat: -'; return; }
+  const res = await fetch('/api/marketplace/price_hint?name=' + encodeURIComponent(name));
+  const d = await res.json();
+  let trend = d.trend === 'up' ? '↑' : (d.trend === 'down' ? '↓' : '•');
+  hintEl.textContent = `Ortalama fiyat: ${new Intl.NumberFormat('tr-TR').format(d.avg)} TL (${trend})`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('mp-name').addEventListener('input', refreshHint);
+  loadMarketplace();
+  loadTopSellers();
+  loadRecentSales();
+  setInterval(loadMarketplace, 10000);
+  setInterval(loadTopSellers, 30000);
+  setInterval(loadRecentSales, 15000);
+});
+async function loadMarketplace() {
+  const res = await fetch('/api/marketplace/list');
+  const rows = await res.json();
+  const list = document.getElementById('mp-list');
+  const me = '{{ session["username"] if session["username"] else "" }}';
+  list.innerHTML = rows.map(r => {
+    const isMine = r.seller === me;
+    return `
+    <div class="market-item" style="border:1px solid #333; margin-bottom:8px;">
+      <div style="display:flex; justify-content:space-between;">
+        <div>
+          <div style="font-weight:bold">${r.name}</div>
+          <div style="font-size:0.85em; color:var(--text-muted)">${r.description || ''}</div>
+          <div style="font-size:0.85em; color:${r.is_bot ? 'var(--warning)' : 'var(--info)'}">Satıcı: ${r.seller}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-weight:bold; color:var(--success)">${new Intl.NumberFormat('tr-TR').format(r.price)} TL</div>
+          <div>Stok: ${r.stock}</div>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        ${isMine ? `
+          <button class="btn btn-secondary btn-sm" onclick="editProduct(${r.id})">Düzenle</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteProduct(${r.id})">Sil</button>
+        ` : `
+          <input type="number" id="buy-qty-${r.id}" class="form-input" placeholder="Adet" style="max-width:120px">
+          <button class="btn btn-primary btn-sm" onclick="buyProduct(${r.id})">Satın Al</button>
+        `}
+      </div>
+    </div>`;
+  }).join('');
+}
+async function addProduct() {
+  const name = document.getElementById('mp-name').value.trim();
+  const desc = document.getElementById('mp-desc').value.trim();
+  const price = parseInt(document.getElementById('mp-price').value || '0', 10);
+  const stock = parseInt(document.getElementById('mp-stock').value || '0', 10);
+  const res = await fetch('/api/marketplace/add', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, description: desc, price, stock})});
+  const d = await res.json();
+  alert(d.message || '');
+  if (d.success) { loadMarketplace(); toggleAddForm(); }
+}
+async function editProduct(id) {
+  const name = prompt('Yeni ad (boş geçilebilir)', '');
+  const desc = prompt('Yeni açıklama (boş geçilebilir)', '');
+  const price = parseInt(prompt('Yeni fiyat', '0') || '0', 10);
+  const stock = parseInt(prompt('Yeni stok', '0') || '0', 10);
+  const res = await fetch('/api/marketplace/edit', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, name, description: desc, price, stock})});
+  const d = await res.json();
+  alert(d.message || '');
+  if (d.success) loadMarketplace();
+}
+async function deleteProduct(id) {
+  if (!confirm('Silmek istediğinize emin misiniz?')) return;
+  const res = await fetch('/api/marketplace/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
+  const d = await res.json();
+  alert(d.message || '');
+  if (d.success) loadMarketplace();
+}
+async function buyProduct(id) {
+  const qty = parseInt(document.getElementById('buy-qty-'+id).value || '0', 10);
+  const res = await fetch('/api/marketplace/buy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, qty})});
+  const d = await res.json();
+  alert(d.message || '');
+  if (d.success) { loadMarketplace(); }
+}
+async function loadTopSellers() {
+  const res = await fetch('/api/marketplace/top_sellers');
+  const rows = await res.json();
+  const box = document.getElementById('mp-top-sellers');
+  box.innerHTML = rows.map((r,i) => `
+    <div class="inventory-item" style="display:flex; justify-content:space-between;">
+      <div>#${i+1} ${r.seller}</div>
+      <div>Satış: ${r.sales} | Gelir: ${new Intl.NumberFormat('tr-TR').format(r.revenue)} TL</div>
+    </div>`).join('');
+}
+async function loadRecentSales() {
+  const res = await fetch('/api/marketplace/recent_sales');
+  const rows = await res.json();
+  const box = document.getElementById('mp-recent');
+  box.innerHTML = rows.map(r => {
+    let m = {};
+    try { m = JSON.parse(r.meta); } catch(e) {}
+    return `
+    <div class="inventory-item" style="display:flex; justify-content:space-between;">
+      <div>${m.name || '-'}</div>
+      <div>${new Date(r.time * 1000).toLocaleTimeString('tr-TR')} | ${new Intl.NumberFormat('tr-TR').format(r.amount)} TL</div>
+    </div>`;
+  }).join('');
+}
+</script>
+{% endblock %}

@@ -872,12 +872,22 @@ async function sendChat() {
     const msg = input.value.trim();
     if (!msg) return;
     
-    await fetch('/api/chat', {
+    const res = await fetch('/api/chat', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({message: msg})
     });
     
+    if (res.status === 403) {
+        showMessage("Mesajınız uygunsuz içerik nedeniyle engellendi veya geçici olarak susturuldunuz.", 'error');
+        return;
+    }
+    try {
+        const data = await res.json();
+        if (data.moderated) {
+            showMessage("Mesajınız uygunsuz içerik nedeniyle düzenlendi.", 'error');
+        }
+    } catch (e) {}
     input.value = '';
     fetchChat();
 }
