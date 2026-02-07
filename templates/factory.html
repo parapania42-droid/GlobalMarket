@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+    <div class="card">
+        <div class="card-header">
+            <h2>🏭 Fabrikalar</h2>
+            <div class="hint-text">Fabrikalarınızı Game sayfasından da yönetebilirsiniz.</div>
+        </div>
+        <div id="factory-list" class="inventory-grid"></div>
+    </div>
+</div>
+
+<script>
+async function loadFactories() {
+    const res = await fetch('/api/me');
+    if (!res.ok) return;
+    const me = await res.json();
+    const list = document.getElementById('factory-list');
+    const configs = me.factory_config || {};
+    const entries = Object.entries(configs);
+    if (entries.length === 0) {
+        list.innerHTML = '<div class="hint-text">Fabrika yapılandırması boş.</div>';
+        return;
+    }
+    list.innerHTML = entries.map(([fid, conf]) => `
+        <div class="inventory-item" style="display:flex; justify-content:space-between;">
+            <div>🏭 ${conf.name}</div>
+            <div>Lv. ${me.factories[fid] || 0}</div>
+        </div>
+    `).join('');
+}
+document.addEventListener('DOMContentLoaded', loadFactories);
+</script>
+{% endblock %}

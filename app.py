@@ -72,6 +72,77 @@ def init_db():
             )
         ''')
         
+        # Lands table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS lands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                type TEXT NOT NULL,
+                size TEXT NOT NULL,
+                location TEXT NOT NULL,
+                price INTEGER NOT NULL,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
+        # Workers table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS workers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                type TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                salary INTEGER NOT NULL,
+                productivity REAL NOT NULL,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
+        # Factories table (expanded system)
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS factories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                type TEXT NOT NULL,
+                level INTEGER NOT NULL,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
+        # Buildings table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS buildings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                type TEXT NOT NULL,
+                level INTEGER NOT NULL,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
+        # Resources table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS resources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                item TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        ''')
+        
+        # Transactions table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                type TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                time REAL NOT NULL,
+                meta TEXT
+            )
+        ''')
+        
         conn.commit()
         conn.close()
         print("Database initialized successfully.")
@@ -268,6 +339,36 @@ def leaderboard_page():
 def guide_page():
     return render_template('guide.html', active_page='guide')
 
+@app.route('/factory')
+def factory_page():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('factory.html', active_page='factory')
+
+@app.route('/resources')
+def resources_page():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('resources.html', active_page='resources')
+
+@app.route('/land')
+def land_page():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('land.html', active_page='land')
+
+@app.route('/workers')
+def workers_page():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('workers.html', active_page='workers')
+
+@app.route('/realestate')
+def realestate_page():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('realestate.html', active_page='realestate')
+
 @app.route('/api/me')
 def api_me():
     if 'username' not in session: return jsonify({}), 401
@@ -300,6 +401,227 @@ def api_me():
         
     u["factory_config"] = FACTORY_CONFIG
     return jsonify(u)
+
+# ---------------------------------------------------------
+# ECONOMY API: LAND
+# ---------------------------------------------------------
+
+@app.route('/api/land/list')
+def api_land_list():
+    if 'username' not in session: return jsonify({}), 401
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM lands WHERE owner = ?', (session['username'],)).fetchall()
+    conn.close()
+    
+    owned = [dict(r) for r in rows]
+    # Available types & base prices
+    options = {
+        "Tarla": {"base_price": 1000, "locations": {"Kırsal": 0.9, "Şehir": 1.1}},
+        "Sanayi Arsası": {"base_price": 5000, "locations": {"Kırsal": 0.95, "Şehir": 1.2}},
+        "Şehir Arsası": {"base_price": 10000, "locations": {"Kırsal": 1.0, "Şehir": 1.4}}
+    }
+    sizes = {"Küçük": 1.0, "Orta": 1.8, "Büyük": 3.2}
+    return jsonify({"owned": owned, "options": options, "sizes": sizes})
+
+@app.route('/api/land/buy', methods=['POST'])
+def api_land_buy():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['username'])
+    data = request.json
+    type_ = data.get('type')
+    size = data.get('size')
+    location = data.get('location')
+    
+    options = {
+        "Tarla": {"base_price": 1000, "locations": {"Kırsal": 0.9, "Şehir": 1.1}},
+        "Sanayi Arsası": {"base_price": 5000, "locations": {"Kırsal": 0.95, "Şehir": 1.2}},
+        "Şehir Arsası": {"base_price": 10000, "locations": {"Kırsal": 1.0, "Şehir": 1.4}}
+    }
+    sizes = {"Küçük": 1.0, "Orta": 1.8, "Büyük": 3.2}
+    
+    if type_ not in options or size not in sizes or location not in options[type_]["locations"]:
+        return jsonify({"success": False, "message": "Geçersiz parametre!"})
+    
+    base = options[type_]["base_price"]
+    price = int(base * sizes[size] * options[type_]["locations"][location])
+    
+    with lock:
+        if u['money'] < price:
+            return jsonify({"success": False, "message": "Yetersiz bakiye!"})
+        u['money'] -= price
+        save_user(u)
+        
+        conn = get_db_connection()
+        conn.execute('INSERT INTO lands (owner, type, size, location, price, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                     (u['username'], type_, size, location, price, time.time()))
+        conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                     (u['username'], 'land_buy', -price, time.time(), json.dumps({"type": type_, "size": size, "location": location})))
+        conn.commit()
+        conn.close()
+    
+    return jsonify({"success": True, "message": f"{size} {type_} satın alındı! Maliyet: {price} TL"})
+
+# ---------------------------------------------------------
+# ECONOMY API: WORKERS
+# ---------------------------------------------------------
+
+@app.route('/api/workers/hire', methods=['POST'])
+def api_workers_hire():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['username'])
+    data = request.json
+    type_ = data.get('type')
+    count = int(data.get('count', 0))
+    
+    worker_defs = {
+        "İşçi": {"salary": 50, "productivity": 1.0},
+        "Usta": {"salary": 120, "productivity": 1.5},
+        "Mühendis": {"salary": 300, "productivity": 2.0}
+    }
+    if type_ not in worker_defs or count <= 0:
+        return jsonify({"success": False, "message": "Geçersiz parametre!"})
+    
+    # Hire fee: 10x salary per worker
+    cost = worker_defs[type_]["salary"] * 10 * count
+    with lock:
+        if u['money'] < cost:
+            return jsonify({"success": False, "message": "Yetersiz bakiye!"})
+        u['money'] -= cost
+        save_user(u)
+        
+        conn = get_db_connection()
+        conn.execute('INSERT INTO workers (owner, type, count, salary, productivity, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                     (u['username'], type_, count, worker_defs[type_]["salary"], worker_defs[type_]["productivity"], time.time()))
+        conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                     (u['username'], 'workers_hire', -cost, time.time(), json.dumps({"type": type_, "count": count})))
+        conn.commit()
+        conn.close()
+    return jsonify({"success": True, "message": f"{count} {type_} işe alındı! Maliyet: {cost} TL"})
+
+@app.route('/api/workers/fire', methods=['POST'])
+def api_workers_fire():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['username'])
+    data = request.json
+    worker_id = int(data.get('id', 0))
+    
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM workers WHERE id = ? AND owner = ?', (worker_id, u['username'])).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "message": "İşçi kaydı bulunamadı!"})
+    # Severance cost: 2x salary per worker
+    cost = row['salary'] * 2 * row['count']
+    with lock:
+        if u['money'] < cost:
+            conn.close()
+            return jsonify({"success": False, "message": "Yetersiz bakiye!"})
+        u['money'] -= cost
+        save_user(u)
+        conn.execute('DELETE FROM workers WHERE id = ?', (worker_id,))
+        conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                     (u['username'], 'workers_fire', -cost, time.time(), json.dumps({"id": worker_id})))
+        conn.commit()
+        conn.close()
+    return jsonify({"success": True, "message": f"İşten çıkarıldı. Tazminat: {cost} TL"})
+
+# ---------------------------------------------------------
+# ECONOMY DASHBOARD STATS
+# ---------------------------------------------------------
+@app.route('/api/economy/stats')
+def api_economy_stats():
+    if 'username' not in session: return jsonify({}), 401
+    u = get_user(session['username'])
+    conn = get_db_connection()
+    land_count = conn.execute('SELECT COUNT(*) as c FROM lands WHERE owner = ?', (u['username'],)).fetchone()['c']
+    worker_count = conn.execute('SELECT COALESCE(SUM(count),0) as c FROM workers WHERE owner = ?', (u['username'],)).fetchone()['c']
+    factory_count = len(u.get('factories', {}))
+    # total assets: money + land prices + approximate factories
+    lands_rows = conn.execute('SELECT price FROM lands WHERE owner = ?', (u['username'],)).fetchall()
+    conn.close()
+    total_land_value = sum([r['price'] for r in lands_rows])
+    approx_factory_value = 0
+    for fid, lvl in u.get('factories', {}).items():
+        conf = FACTORY_CONFIG.get(fid)
+        if conf:
+            approx_factory_value += int(conf['cost'] * lvl * 0.8)
+    total_assets = u.get('money', 0) + total_land_value + approx_factory_value
+    return jsonify({
+        "money": u.get('money', 0),
+        "level": u.get('level', 1),
+        "total_assets": total_assets,
+        "worker_count": worker_count,
+        "owned_land": land_count,
+        "factories_count": factory_count
+    })
+
+# ---------------------------------------------------------
+# ECONOMY API: RESOURCES
+# ---------------------------------------------------------
+
+def get_resources(owner):
+    conn = get_db_connection()
+    rows = conn.execute('SELECT item, quantity FROM resources WHERE owner = ?', (owner,)).fetchall()
+    conn.close()
+    res = {}
+    for r in rows:
+        res[r['item']] = res.get(r['item'], 0) + r['quantity']
+    return res
+
+def add_resource(owner, item, qty):
+    conn = get_db_connection()
+    conn.execute('INSERT INTO resources (owner, item, quantity, updated_at) VALUES (?, ?, ?, ?)',
+                 (owner, item, qty, time.time()))
+    conn.commit()
+    conn.close()
+
+def calculate_economy(user):
+    now = time.time()
+    last = user.get('resource_last_update', now)
+    elapsed_min = (now - last) / 60.0
+    if elapsed_min <= 0:
+        return
+    
+    # Production based on lands and workers
+    conn = get_db_connection()
+    lands = conn.execute('SELECT * FROM lands WHERE owner = ?', (user['username'],)).fetchall()
+    workers = conn.execute('SELECT * FROM workers WHERE owner = ?', (user['username'],)).fetchall()
+    conn.close()
+    
+    # Worker productivity multiplier
+    prod_mult = 1.0
+    for w in workers:
+        prod_mult += 0.05 * w['count'] * (w['productivity'] - 1.0)
+    
+    # Size multipliers
+    size_mult = {"Küçük": 1.0, "Orta": 1.8, "Büyük": 3.2}
+    
+    # Base per land per minute
+    base_rates = {
+        "Tarla": {"Buğday": 5},
+        "Sanayi Arsası": {"Demir": 2, "Taş": 3, "Kömür": 1},
+        "Şehir Arsası": {} # used for buildings; no raw production
+    }
+    
+    # Accrue resources
+    for l in lands:
+        rates = base_rates.get(l['type'], {})
+        for item, rate in rates.items():
+            qty = int(rate * size_mult.get(l['size'], 1.0) * prod_mult * elapsed_min)
+            if qty > 0:
+                add_resource(user['username'], item, qty)
+    
+    user['resource_last_update'] = now
+
+@app.route('/api/resources')
+def api_resources():
+    if 'username' not in session: return jsonify({}), 401
+    u = get_user(session['username'])
+    with lock:
+        calculate_economy(u)
+        save_user(u)
+    res = get_resources(u['username'])
+    return jsonify(res)
 
 @app.route('/api/market')
 def api_market():
@@ -727,6 +1049,31 @@ def admin_page():
     
     return render_template('admin.html', users=users, stats=stats, active_page='admin')
 
+def _admin_guard():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    if session['username'] != 'Paramen42':
+        return redirect(url_for('game'))
+    return None
+
+@app.route('/admin/users')
+def admin_users():
+    guard = _admin_guard()
+    if guard: return guard
+    return redirect(url_for('admin_page'))
+
+@app.route('/admin/economy')
+def admin_economy():
+    guard = _admin_guard()
+    if guard: return guard
+    return redirect(url_for('admin_page'))
+
+@app.route('/admin/control')
+def admin_control():
+    guard = _admin_guard()
+    if guard: return guard
+    return redirect(url_for('admin_page'))
+
 @app.route('/api/admin/action', methods=['POST'])
 def admin_action():
     if 'username' not in session: return jsonify({"success": False}), 401
@@ -736,6 +1083,13 @@ def admin_action():
     target = data.get('username')
     action = data.get('action')
     amount = data.get('amount')
+    meta_raw = data.get('meta')
+    meta = None
+    try:
+        if meta_raw:
+            meta = json.loads(meta_raw)
+    except Exception:
+        meta = None
     
     if not target or not action:
         return jsonify({"success": False, "message": "Eksik parametre!"})
@@ -758,6 +1112,45 @@ def admin_action():
             u['is_banned'] = True
         elif action == 'unban_user':
             u['is_banned'] = False
+        elif action == 'give_land':
+            if not meta or not all(k in meta for k in ['type','size','location']):
+                return jsonify({"success": False, "message": "Meta eksik: type,size,location"})
+            conn = get_db_connection()
+            price = int(meta.get('price', 0))
+            conn.execute('INSERT INTO lands (owner, type, size, location, price, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                         (u['username'], meta['type'], meta['size'], meta['location'], price, time.time()))
+            conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                         (u['username'], 'admin_give_land', 0, time.time(), json.dumps(meta)))
+            conn.commit()
+            conn.close()
+        elif action == 'give_factory':
+            if not meta or not all(k in meta for k in ['type','level']):
+                return jsonify({"success": False, "message": "Meta eksik: type,level"})
+            # store high-level ownership in factories table, and user dict for gameplay
+            fid = meta['type']
+            lvl = int(meta['level'])
+            u.setdefault('factories', {})[fid] = lvl
+            conn = get_db_connection()
+            conn.execute('INSERT INTO factories (owner, type, level, created_at) VALUES (?, ?, ?, ?)',
+                         (u['username'], fid, lvl, time.time()))
+            conn.execute('INSERT INTO transactions (owner, type, amount, time, meta) VALUES (?, ?, ?, ?, ?)',
+                         (u['username'], 'admin_give_factory', 0, time.time(), json.dumps(meta)))
+            conn.commit()
+            conn.close()
+        elif action == 'reset_economy':
+            conn = get_db_connection()
+            conn.execute('DELETE FROM lands WHERE owner = ?', (u['username'],))
+            conn.execute('DELETE FROM workers WHERE owner = ?', (u['username'],))
+            conn.execute('DELETE FROM buildings WHERE owner = ?', (u['username'],))
+            conn.execute('DELETE FROM resources WHERE owner = ?', (u['username'],))
+            conn.execute('DELETE FROM transactions WHERE owner = ?', (u['username'],))
+            conn.commit()
+            conn.close()
+            # reset in-user aggregates
+            u['inventory'] = {}
+            u['factories'] = {}
+            u['factory_storage'] = {}
+            u['factory_last_update'] = {}
         elif action == 'delete_user':
             conn = get_db_connection()
             conn.execute('DELETE FROM users WHERE username = ?', (target,))

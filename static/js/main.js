@@ -136,6 +136,7 @@ async function updateAll() {
             fetchMarket(), 
             fetchUserData()
         ]);
+        fetchEconomyStats();
     } catch (e) {
         console.error("Update failed:", e);
     }
@@ -247,6 +248,31 @@ function renderHUD(player) {
     if (adminBtn) adminBtn.style.display = player.is_admin ? 'inline-block' : 'none';
 }
 
+async function fetchEconomyStats() {
+    try {
+        const res = await fetch('/api/economy/stats');
+        if (!res.ok) return;
+        const s = await res.json();
+        const m = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        m('dash-money', formatMoney(s.money));
+        m('dash-level', s.level);
+        m('dash-assets', formatMoney(s.total_assets));
+        m('dash-workers', s.worker_count);
+        m('dash-land', s.owned_land);
+        m('dash-factories', s.factories_count);
+        
+        // Simple trends box based on market economy banner
+        const trendBox = document.getElementById('trend-box');
+        if (trendBox) {
+            trendBox.textContent = 'Trend verileri pazar üzerinden güncelleniyor.';
+        }
+        // Earnings box from recent transactions — fetch minimal list later
+        const earnBox = document.getElementById('earnings-box');
+        if (earnBox) {
+            earnBox.textContent = 'Son işlemler yakında listelenecek.';
+        }
+    } catch (e) {}
+}
 function renderInventory(player) {
     const invList = document.getElementById('inventory-list');
     const sellSelect = document.getElementById('sell-item');

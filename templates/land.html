@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+    <div class="card">
+        <div class="card-header">
+            <h2>🏗️ Arazi Yönetimi</h2>
+            <div class="hint-text">Tarla, Sanayi veya Şehir arsası satın alabilirsiniz.</div>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+            <div>
+                <h3>Satın Al</h3>
+                <div class="input-group">
+                    <select id="land-type" class="form-input"></select>
+                </div>
+                <div class="input-group">
+                    <select id="land-size" class="form-input"></select>
+                    <select id="land-location" class="form-input"></select>
+                </div>
+                <button class="btn btn-primary" onclick="buyLand()">SATIN AL</button>
+            </div>
+            <div>
+                <h3>Sahip Olduklarım</h3>
+                <div id="owned-lands" style="max-height:300px; overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadLandOptions() {
+    const res = await fetch('/api/land/list');
+    const data = await res.json();
+    const typeSel = document.getElementById('land-type');
+    const sizeSel = document.getElementById('land-size');
+    const locSel = document.getElementById('land-location');
+    typeSel.innerHTML = Object.keys(data.options).map(t => `<option value="${t}">${t}</option>`).join('');
+    sizeSel.innerHTML = Object.keys(data.sizes).map(s => `<option value="${s}">${s}</option>`).join('');
+    // default type selection for locations
+    const firstType = Object.keys(data.options)[0];
+    function updateLocations(type) {
+        const locs = Object.keys(data.options[type].locations);
+        locSel.innerHTML = locs.map(l => `<option value="${l}">${l}</option>`).join('');
+    }
+    typeSel.onchange = () => updateLocations(typeSel.value);
+    updateLocations(firstType);
+    
+    const ownedDiv = document.getElementById('owned-lands');
+    ownedDiv.innerHTML = (data.owned || []).map(l => `
+        <div class="inventory-item" style="display:flex; justify-content:space-between;">
+            <div>🗺️ ${l.size} ${l.type} (${l.location})</div>
+            <div style="color:var(--success)">${new Intl.NumberFormat('tr-TR').format(l.price)} TL</div>
+        </div>
+    `).join('') || '<div class="hint-text">Henüz arsa yok.</div>';
+}
+
+async function buyLand() {
+    const type = document.getElementById('land-type').value;
+    const size = document.getElementById('land-size').value;
+    const location = document.getElementById('land-location').value;
+    const res = await fetch('/api/land/buy', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type, size, location})
+    });
+    const data = await res.json();
+    alert(data.message);
+    if (data.success) loadLandOptions();
+}
+
+document.addEventListener('DOMContentLoaded', loadLandOptions);
+</script>
+{% endblock %}

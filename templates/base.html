@@ -45,29 +45,41 @@
 
     <!-- FIXED BOTTOM NAVIGATION -->
     <nav class="bottom-nav">
-        <a href="/game" class="nav-item {% if active_page == 'game' %}active{% endif %}">
-            <i class="fas fa-home"></i>
+        <a href="/game" target="_blank" class="nav-item {% if active_page == 'game' %}active{% endif %}">
+            <span style="font-size:1.2em">🏠</span>
             <span>Ana Sayfa</span>
         </a>
-        <a href="/game#factories" class="nav-item">
-            <i class="fas fa-industry"></i>
+        <a href="/factory" target="_blank" class="nav-item {% if active_page == 'factory' %}active{% endif %}">
+            <span style="font-size:1.2em">🏭</span>
             <span>Fabrika</span>
         </a>
-        <a href="/game#market" class="nav-item">
-            <i class="fas fa-shopping-cart"></i>
-            <span>Market</span>
+        <a href="/resources" target="_blank" class="nav-item {% if active_page == 'resources' %}active{% endif %}">
+            <span style="font-size:1.2em">🌾</span>
+            <span>Hammadde</span>
         </a>
-        <a href="/leaderboard" class="nav-item {% if active_page == 'leaderboard' %}active{% endif %}">
-            <i class="fas fa-trophy"></i>
+        <a href="/land" target="_blank" class="nav-item {% if active_page == 'land' %}active{% endif %}">
+            <span style="font-size:1.2em">🏗️</span>
+            <span>Arazi</span>
+        </a>
+        <a href="/workers" target="_blank" class="nav-item {% if active_page == 'workers' %}active{% endif %}">
+            <span style="font-size:1.2em">👷</span>
+            <span>İşçiler</span>
+        </a>
+        <a href="/realestate" target="_blank" class="nav-item {% if active_page == 'realestate' %}active{% endif %}">
+            <span style="font-size:1.2em">🏢</span>
+            <span>Emlak</span>
+        </a>
+        <a href="/leaderboard" target="_blank" class="nav-item {% if active_page == 'leaderboard' %}active{% endif %}">
+            <span style="font-size:1.2em">📊</span>
             <span>Liderlik</span>
         </a>
-        <a href="/guide" class="nav-item {% if active_page == 'guide' %}active{% endif %}">
-            <i class="fas fa-book"></i>
-            <span>Rehber</span>
-        </a>
-        <a href="/admin" id="nav-admin-btn" class="nav-item {% if active_page == 'admin' %}active{% endif %}" style="display:none; color: var(--danger);">
-            <i class="fas fa-user-shield"></i>
+        <a href="/admin" target="_blank" id="nav-admin-btn" class="nav-item {% if active_page == 'admin' %}active{% endif %}" style="display:none; color: var(--danger);">
+            <span style="font-size:1.2em">⚙️</span>
             <span>Admin</span>
+        </a>
+        <a href="/guide" target="_blank" class="nav-item {% if active_page == 'guide' %}active{% endif %}">
+            <span style="font-size:1.2em">📖</span>
+            <span>Rehber</span>
         </a>
     </nav>
 

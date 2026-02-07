@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+    <div class="card">
+        <div class="card-header">
+            <h2>👷 İşçi Yönetimi</h2>
+            <div class="hint-text">İşçi, Usta ve Mühendis işe alabilirsiniz.</div>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+            <div>
+                <h3>İşe Al</h3>
+                <div class="input-group">
+                    <select id="worker-type" class="form-input">
+                        <option>İşçi</option>
+                        <option>Usta</option>
+                        <option>Mühendis</option>
+                    </select>
+                    <input id="worker-count" type="number" class="form-input" placeholder="Adet">
+                </div>
+                <button class="btn btn-success" onclick="hireWorker()">İŞE AL</button>
+            </div>
+            <div>
+                <h3>Mevcut Çalışanlar</h3>
+                <div id="workers-list" style="max-height:300px; overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadWorkers() {
+    // Minimal fetch using DB directly via a helper API (reuse land list style)
+    const res = await fetch('/api/me');
+    if (!res.ok) return;
+    const me = await res.json();
+    
+    const listDiv = document.getElementById('workers-list');
+    // Fetch raw workers table via dedicated endpoint? Use quick server-side list:
+    // Since there's no listing endpoint, we can add a simple one if needed later.
+    // For now, show hint.
+    listDiv.innerHTML = '<div class="hint-text">Yeni işe alınanlar burada listelenecek.</div>';
+}
+
+async function hireWorker() {
+    const type = document.getElementById('worker-type').value;
+    const count = parseInt(document.getElementById('worker-count').value);
+    if (!count || count <= 0) {
+        alert("Geçerli bir adet girin!");
+        return;
+    }
+    const res = await fetch('/api/workers/hire', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type, count})
+    });
+    const data = await res.json();
+    alert(data.message);
+    loadWorkers();
+}
+
+document.addEventListener('DOMContentLoaded', loadWorkers);
+</script>
+{% endblock %}

@@ -38,6 +38,10 @@
                         <input type="number" id="admin-amount" placeholder="Miktar (Para/XP/Level)" class="form-input">
                     </div>
                     
+                    <div class="input-group" style="margin-bottom:5px;">
+                        <input type="text" id="admin-meta" placeholder="Ek Bilgi (JSON: {\"type\":\"Sanayi Arsası\",\"size\":\"Orta\",\"location\":\"Şehir\"})" class="form-input">
+                    </div>
+                    
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
                         <button class="btn btn-success btn-sm" onclick="adminAction('add_money')">💰 Para Ekle</button>
                         <button class="btn btn-warning btn-sm" onclick="adminAction('remove_money')">💸 Para Sil</button>
@@ -45,6 +49,10 @@
                         <button class="btn btn-danger btn-sm" onclick="adminAction('ban_user')">🚫 BANLA</button>
                         <button class="btn btn-secondary btn-sm" onclick="adminAction('unban_user')">✅ BAN AÇ</button>
                         <button class="btn btn-danger btn-sm" style="grid-column: span 2;" onclick="adminAction('delete_user')">🗑️ HESABI SİL</button>
+                        
+                        <button class="btn btn-info btn-sm" onclick="adminAction('give_land')">🏗️ Arazi Ver</button>
+                        <button class="btn btn-info btn-sm" onclick="adminAction('give_factory')">🏭 Fabrika Ver</button>
+                        <button class="btn btn-danger btn-sm" style="grid-column: span 2;" onclick="adminAction('reset_economy')">♻️ Ekonomiyi Sıfırla</button>
                     </div>
                 </div>
             </div>
@@ -110,7 +118,8 @@ async function adminAction(action) {
                 body: JSON.stringify({
                     username: username,
                     action: action,
-                    amount: amount
+                    amount: amount,
+                    meta: document.getElementById('admin-meta').value
                 })
             });
             const data = await res.json();

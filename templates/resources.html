@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+    <div class="card">
+        <div class="card-header">
+            <h2>🌾 Hammadde Üretimi</h2>
+            <div class="hint-text">Arazi ve işçi sayısına göre üretim otomatik artar.</div>
+        </div>
+        <div id="resources-list" class="inventory-grid"></div>
+    </div>
+</div>
+
+<script>
+function iconFor(item) {
+    const m = {'Buğday':'🌾','Odun':'🪵','Demir':'⛏️','Taş':'🪨','Kömür':'🧱'};
+    return m[item] || '📦';
+}
+async function loadResources() {
+    const res = await fetch('/api/resources');
+    const data = await res.json();
+    const list = document.getElementById('resources-list');
+    const items = Object.entries(data);
+    if (items.length === 0) {
+        list.innerHTML = '<div class="hint-text">Henüz hammadde üretilmedi.</div>';
+        return;
+    }
+    list.innerHTML = items.map(([name, qty]) => `
+        <div class="inventory-item" style="display:flex; justify-content:space-between;">
+            <div>${iconFor(name)} ${name}</div>
+            <div style="font-weight:bold">${qty}</div>
+        </div>
+    `).join('');
+}
+document.addEventListener('DOMContentLoaded', loadResources);
+</script>
+{% endblock %}

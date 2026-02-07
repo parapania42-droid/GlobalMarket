@@ -19,6 +19,19 @@
          But for rendering, we need the containers.
     -->
     <div class="container main-game-area" id="game-page-container">
+        <div class="card" style="margin-bottom:15px;">
+            <div class="card-header">
+                <h2>📊 Genel Durum</h2>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px;">
+                <div class="inventory-item"><div>💰 Para</div><div id="dash-money" style="font-weight:bold">0 TL</div></div>
+                <div class="inventory-item"><div>⭐ Seviye</div><div id="dash-level" style="font-weight:bold">1</div></div>
+                <div class="inventory-item"><div>🏦 Toplam Varlık</div><div id="dash-assets" style="font-weight:bold">0 TL</div></div>
+                <div class="inventory-item"><div>👷 İşçi Sayısı</div><div id="dash-workers" style="font-weight:bold">0</div></div>
+                <div class="inventory-item"><div>🏗️ Arazi</div><div id="dash-land" style="font-weight:bold">0</div></div>
+                <div class="inventory-item"><div>🏭 Fabrika</div><div id="dash-factories" style="font-weight:bold">0</div></div>
+            </div>
+        </div>
         <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
              <button id="daily-bonus-btn" class="btn btn-sm btn-warning" onclick="claimDailyBonus()" style="display:none;">🎁 GÜNLÜK ÖDÜL</button>
         </div>
@@ -52,6 +65,21 @@
 
             <!-- ORTA KOLON: ENVANTER & SATIŞ -->
             <div class="column-inventory">
+                 <!-- Dashboard Widgets -->
+                 <div class="card">
+                    <div class="card-header">
+                        <h3>📈 Piyasa Trendleri</h3>
+                    </div>
+                    <div id="trend-box" class="hint-text">Veriler yükleniyor...</div>
+                 </div>
+                 <div class="card">
+                    <div class="card-header"><h3>💹 Son Kazançlar</h3></div>
+                    <div id="earnings-box" class="hint-text">Henüz işlem yok.</div>
+                 </div>
+                 <div class="card">
+                    <div class="card-header"><h3>🛠️ Sistem Mesajları</h3></div>
+                    <div id="system-box" class="hint-text">Her şey yolunda.</div>
+                 </div>
                  <!-- Görev -->
                  <div class="card mission-card" id="mission-box" style="display:none">
                     <!-- Görev JS ile buraya gelecek -->
