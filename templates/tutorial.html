@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Market - Nasıl Oynanır?</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .tutorial-step {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 5px solid var(--primary);
+        }
+        .tutorial-step h3 {
+            color: var(--primary);
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="hud">
+        <div class="container hud-content">
+            <div class="hud-item">
+                <span class="hud-label">Eğitim</span>
+                <span class="hud-value">İnteraktif Rehber</span>
+            </div>
+            <div class="hud-item" style="flex-grow:1; text-align:right;">
+                <a href="/game" class="btn btn-sm btn-secondary">Oyuna Dön</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" style="margin-top: 80px;">
+        <div class="card">
+            <h1>📚 Global Market Rehberi</h1>
+            <p>Ekonomi imparatorluğunu kurmak için bilmen gereken her şey.</p>
+
+            <div class="tab-header">
+                <button class="tab-btn active" onclick="openTab('market')">Pazar</button>
+                <button class="tab-btn" onclick="openTab('factory')">Fabrikalar</button>
+                <button class="tab-btn" onclick="openTab('active')">Aktiflik & Bonus</button>
+                <button class="tab-btn" onclick="openTab('admin')">Yönetim</button>
+            </div>
+
+            <div id="market" class="tab-content active">
+                <div class="tutorial-step">
+                    <h3>1. Pazar ve Ticaret</h3>
+                    <p>Oyunun kalbi <b>Pazar</b>'dır. Burada diğer oyuncuların sattığı ürünleri görebilir ve satın alabilirsin. Fiyatlar dinamik olarak değişir. "Yeni", "Ucuz" ve "İsim" butonları ile ilanları sıralayabilirsin. Ucuza al, pahalıya sat!</p>
+                </div>
+                <div class="tutorial-step">
+                    <h3>2. Ekonomi Olayları</h3>
+                    <p>Ekonomi bazen dalgalanır. "Kriz" dönemlerinde fiyatlar düşer, "Bolluk" dönemlerinde artar. Bu olayları takip ederek karını maksimize edebilirsin.</p>
+                </div>
+            </div>
+
+            <div id="factory" class="tab-content">
+                <div class="tutorial-step">
+                    <h3>1. Üretim ve Fabrikalar</h3>
+                    <p>Kendi kaynaklarını üretmek için <b>Fabrikalar</b> kurmalısın. Fabrikalar belirli aralıklarla kaynak üretir. <br>
+                    ⚠️ <b>ÖNEMLİ:</b> Fabrikaların bir depolama kapasitesi vardır. Depo dolunca üretim durur. Sık sık girip "TOPLA" butonuna basarak ürünleri envanterine almalısın.</p>
+                </div>
+                <div class="tutorial-step">
+                    <h3>2. Hızlandırma (Boost)</h3>
+                    <p>Fabrika detay penceresinden <b>"HIZLANDIR"</b> butonuna basarak 1 dakika boyunca üretimi 2 katına çıkarabilirsin. Bu özellik aktif oyunculuk gerektirir.</p>
+                </div>
+            </div>
+
+            <div id="active" class="tab-content">
+                <div class="tutorial-step">
+                    <h3>1. Aktiflik Sistemi</h3>
+                    <p>GlobalMarket aktif oyuncuları ödüllendirir. Eğer 5 dakika boyunca hiçbir işlem yapmazsanız (Pazar, Sohbet, Toplama vb.), hesabınız <b>AFK Modu</b>na girer.</p>
+                    <p style="color:var(--danger)">AFK Modunda fabrikalarınız %90 daha yavaş üretim yapar!</p>
+                </div>
+                <div class="tutorial-step">
+                    <h3>2. XP ve Seviye</h3>
+                    <p>Her işlem (Alım, Satım, Üretim Toplama, Sohbet) size XP kazandırır. Seviye atladıkça yeni fabrikalar ve ürünler açılır.</p>
+                </div>
+            </div>
+
+            <div id="admin" class="tab-content">
+                 <div class="tutorial-step">
+                    <h3>Yönetici Paneli</h3>
+                    <p>Sadece <b>Paramen42</b> kullanıcısı yönetici paneline erişebilir. Yönetici panelinden kullanıcıları yönetebilir, piyasaya müdahale edebilir ve görev atayabilir.</p>
+                </div>
+            </div>
+
+            <div style="text-align:center; margin-top:30px;">
+                <a href="/game" class="btn" style="padding:15px 30px; font-size:1.2em;">OYUNA BAŞLA</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openTab(tabName) {
+            // Hide all
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            // Show current
+            document.getElementById(tabName).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+    </script>
+</body>
+</html>

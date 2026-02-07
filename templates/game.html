@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Market - Oyun</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- HUD / TOP PANEL -->
+    <div class="hud">
+        <div class="container hud-content">
+            <div class="hud-group">
+                <div class="hud-item" data-tip="Kullanıcı adınız">
+                    <span class="hud-label">Oyuncu</span>
+                    <span class="hud-value" id="hud-username">-</span>
+                </div>
+                <div class="hud-item" data-tip="Mevcut bakiyeniz">
+                    <span class="hud-label">Para</span>
+                    <span class="hud-value" id="hud-money">0 TL</span>
+                </div>
+            </div>
+            
+            <div class="hud-group">
+                <div class="hud-item" data-tip="Mevcut seviyeniz">
+                    <span class="hud-label">Seviye</span>
+                    <span class="hud-value" id="hud-level">1</span>
+                </div>
+                <div class="hud-item" style="min-width: 140px;" data-tip="Deneyim puanınız ve ilerleme">
+                    <span class="hud-label">XP</span>
+                    <div class="xp-bar-bg">
+                        <div class="xp-bar-fill" id="hud-xp-bar" style="width:0%"></div>
+                    </div>
+                    <span class="hud-value-small" id="hud-xp">0 / 1000</span>
+                </div>
+                <div class="hud-item" data-tip="Üretim bonuslarınız (ör. hızlandırma)">
+                    <span class="hud-label">Bonus</span>
+                    <span class="hud-value" id="hud-bonus">Yok</span>
+                </div>
+            </div>
+
+            <div class="hud-group" style="flex-grow:1; justify-content:flex-end;">
+                <button id="daily-bonus-btn" class="btn btn-sm btn-warning" onclick="claimDailyBonus()" style="display:none; margin-right:5px;">🎁 GÜNLÜK ÖDÜL</button>
+                <a href="/tutorial" class="btn btn-sm btn-info">❓ Rehber</a>
+                <a href="/admin" id="admin-btn" class="btn btn-sm btn-danger" style="display:none;">ADMIN</a>
+                <a href="/leaderboard" class="btn btn-sm btn-secondary">🏆 Liderlik</a>
+                <a href="/logout" class="btn btn-sm btn-secondary">Çıkış</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mini-Event Popup -->
+    <div id="event-popup" class="event-popup" style="display:none;">
+        <div class="event-content">
+            <div class="event-title" id="event-title">Etkinlik</div>
+            <div class="event-desc" id="event-desc">Yeni bir mini etkinlik aktif!</div>
+            <div class="event-actions">
+                <button class="btn btn-success btn-sm" id="event-claim-btn">ÖDÜLÜ AL</button>
+                <button class="btn btn-secondary btn-sm" id="event-close-btn">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container main-game-area">
+        <!-- AFK Uyarısı -->
+        <div id="active-status" style="display:none; background:var(--danger); color:white; padding:10px; border-radius:5px; margin-bottom:15px; text-align:center; font-weight:bold; animation:pulse 1s infinite;"></div>
+        
+        <!-- Ekonomi Durum Bannerı -->
+        <div id="economy-status" class="economy-banner">
+            Küresel pazara bağlanılıyor...
+        </div>
+
+        <div class="game-grid">
+            <!-- SOL KOLON: PAZAR -->
+            <div class="column-market">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>🛒 Canlı Pazar</h2>
+                        <div class="market-controls">
+                            <button class="btn btn-xs" onclick="setSort('time')">YENİ</button>
+                            <button class="btn btn-xs" onclick="setSort('price')">UCUZ</button>
+                            <button class="btn btn-xs" onclick="setSort('item')">İSİM</button>
+                        </div>
+                    </div>
+                    
+                    <div class="market-list" id="market-list">
+                        <!-- JS ile doldurulacak -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- ORTA KOLON: ENVANTER & SATIŞ -->
+            <div class="column-inventory">
+                 <!-- Görev -->
+                 <div class="card mission-card" id="mission-box" style="display:none">
+                    <!-- Görev JS ile buraya gelecek -->
+                </div>
+
+                 <!-- Varlıklarım -->
+                 <div class="card">
+                    <h3>🎒 Envanterim</h3>
+                    <div id="net-worth" class="net-worth">Net Servet: 0 TL</div>
+                    <div class="inventory-grid" id="inventory-list">
+                        <!-- Envanter JS ile buraya gelecek -->
+                    </div>
+                </div>
+
+                <!-- Satış Yap -->
+                <div class="card">
+                    <h3>➕ Satış Yap</h3>
+                    <div class="sell-form">
+                        <select id="sell-item" class="form-input"></select>
+                        <div class="input-group">
+                            <input type="number" id="sell-qty" placeholder="Adet" class="form-input">
+                            <input type="number" id="sell-price" placeholder="Fiyat" class="form-input">
+                        </div>
+                        <button class="btn btn-primary btn-block" onclick="sellItem()">SATIŞA KOY</button>
+                    </div>
+                </div>
+
+                <!-- Lojistik (Seferler) -->
+                <div class="card">
+                    <h3>🚚 Lojistik Merkezi</h3>
+                    <div id="expedition-active" style="display:none; text-align:center; padding:10px; background:rgba(0,0,0,0.2); border-radius:5px;">
+                        <div id="exp-timer" style="font-size:1.2em; font-weight:bold; margin-bottom:5px;">00:00</div>
+                        <div id="exp-status" style="color:var(--text-muted)">Seferde...</div>
+                        <button id="exp-collect-btn" class="btn btn-success btn-block" style="margin-top:10px; display:none;" onclick="collectExpedition()">ÖDÜLÜ AL</button>
+                    </div>
+                    
+                    <div id="expedition-list">
+                        <div class="exp-item" onclick="startExpedition('short')">
+                            <div style="font-weight:bold">Kısa Mesafe</div>
+                            <div style="font-size:0.8em">Süre: 5dk | Maliyet: 100 TL</div>
+                        </div>
+                        <div class="exp-item" onclick="startExpedition('medium')">
+                            <div style="font-weight:bold">Orta Mesafe</div>
+                            <div style="font-size:0.8em">Süre: 15dk | Maliyet: 500 TL</div>
+                        </div>
+                        <div class="exp-item" onclick="startExpedition('long')">
+                            <div style="font-weight:bold">Uzun Mesafe</div>
+                            <div style="font-size:0.8em">Süre: 60dk | Maliyet: 2000 TL</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Finans (Risk) -->
+                <div class="card">
+                    <h3>📈 Risk Sermayesi</h3>
+                    <p class="hint-text" style="font-size:0.8em">Paranı ikiye katla ya da kaybet! (%50 Şans)</p>
+                    <div class="input-group">
+                        <input type="number" id="venture-amount" placeholder="Miktar" class="form-input">
+                        <button class="btn btn-danger" onclick="playVenture()">RİSK AL</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SAĞ KOLON: FABRİKALAR -->
+            <div class="column-factories">
+                <div class="card">
+                    <h3>🏭 Fabrikalarım</h3>
+                    <p class="hint-text">Depo dolmadan toplamayı unutma!</p>
+                    <div id="factory-list">
+                        <!-- JS ile doldurulacak -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHAT BOX -->
+    <div class="chat-container">
+        <div class="chat-header" onclick="toggleChat()">
+            💬 Global Sohbet
+        </div>
+        <div class="chat-body" id="chat-body">
+            <div id="chat-messages" class="chat-messages">
+                <!-- Mesajlar -->
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Mesaj yaz..." onkeypress="handleChatKey(event)">
+                <button onclick="sendChat()">Gönder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FACTORY MODAL TEMPLATE -->
+    <div id="factory-modal" class="modal-overlay" style="display:none;" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 id="modal-title">Fabrika <span id="modal-level-badge" style="font-size:0.6em; color:var(--primary)">Lv. 0</span></h2>
+                <button class="btn btn-sm btn-danger" onclick="closeModal()">X</button>
+            </div>
+            
+            <div class="modal-body">
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                    <div>
+                        <div>Üretim: <span id="modal-rate" style="color:var(--success)">0/dk</span></div>
+                        <div>Depo: <span id="modal-storage">0</span> / <span id="modal-capacity">0</span></div>
+                    </div>
+                    <div style="text-align:right">
+                         <div id="modal-status-text">Durum: Normal</div>
+                         <button id="modal-boost-btn" class="btn btn-sm btn-warning">
+                             ⚡ HIZLANDIR (1dk)
+                         </button>
+                    </div>
+                </div>
+
+                <div class="progress-bar">
+                    <div id="modal-progress" class="progress-fill" style="width: 0%"></div>
+                </div>
+                
+                <div style="margin-top:20px; padding:15px; background:rgba(0,0,0,0.2); border-radius:8px;">
+                    <h4>Yükseltme</h4>
+                    <p>Maliyet: <span id="modal-cost-text"></span></p>
+                    <p id="modal-next-stats" style="font-size:0.9em; color:var(--text-muted)">Yeni Kapasite: - | Yeni Hız: -</p>
+                    <button id="modal-upgrade-btn" class="btn btn-primary" style="width:100%">
+                        YÜKSELT
+                    </button>
+                </div>
+
+                <div style="margin-top:10px;">
+                     <button id="modal-collect-btn" class="btn btn-success" style="width:100%; padding:15px;">
+                        📦 DEPOYU TOPLA
+                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

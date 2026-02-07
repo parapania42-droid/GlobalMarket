@@ -1,0 +1,529 @@
+:root {
+    --bg-dark: #121212;
+    --bg-card: #1e1e1e;
+    --text-main: #e0e0e0;
+    --text-muted: #a0a0a0;
+    --primary: #3f51b5;
+    --primary-hover: #303f9f;
+    --secondary: #607d8b;
+    --success: #4caf50;
+    --danger: #f44336;
+    --warning: #ff9800;
+    --info: #00bcd4;
+    --rare: #9c27b0;
+    --epic: #ff5722;
+    --legendary: #ffeb3b;
+    --border: #333;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* --- HUD --- */
+.hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: rgba(30, 30, 30, 0.95);
+    border-bottom: 1px solid var(--border);
+    z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    backdrop-filter: blur(5px);
+}
+
+.hud-content {
+    display: flex;
+    align-items: center;
+    height: 70px;
+    gap: 20px;
+}
+
+.hud-group {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.hud-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.hud-label {
+    font-size: 0.75em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.hud-value {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: var(--text-main);
+}
+
+.hud-value-small {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+.xp-bar-bg {
+    width: 100%;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    margin-top: 2px;
+}
+
+.xp-bar-fill {
+    height: 100%;
+    background: var(--info);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+/* --- CONTAINER & LAYOUT --- */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 15px;
+}
+
+.main-game-area {
+    margin-top: 90px;
+    padding-bottom: 100px; /* Space for chat */
+}
+
+.game-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 900px) {
+    .game-grid {
+        grid-template-columns: 1fr;
+    }
+    .hud-content {
+        height: auto;
+        padding: 10px 15px;
+        flex-wrap: wrap;
+    }
+    .hud-group {
+        width: 100%;
+        justify-content: space-between;
+        margin-bottom: 5px;
+    }
+    .main-game-area {
+        margin-top: 140px;
+    }
+}
+
+/* --- CARDS --- */
+.card {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+}
+
+.card h2, .card h3 {
+    margin: 0;
+    color: var(--text-main);
+}
+
+.hint-text {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-top: 5px;
+}
+
+/* --- MARKET --- */
+.market-list {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.market-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid #333;
+    transition: background 0.2s;
+}
+
+.market-item:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.market-controls button {
+    margin-left: 5px;
+}
+
+/* --- INVENTORY --- */
+.inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.inventory-item {
+    background: #252525;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 0.9em;
+}
+
+.net-worth {
+    text-align: center;
+    color: var(--success);
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+
+/* --- MISSION --- */
+.mission-card {
+    background: linear-gradient(135deg, #1e1e1e 0%, #252525 100%);
+    border-left: 4px solid var(--warning);
+}
+
+/* --- FACTORIES --- */
+.factory-card {
+    background: #252525;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: transform 0.1s;
+    border: 1px solid #333;
+}
+
+.factory-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary);
+}
+
+.factory-header {
+    display: flex;
+    justify-content: space-between;
+}
+
+.storage-bar-bg {
+    height: 6px;
+    background: #111;
+    border-radius: 3px;
+    margin-top: 5px;
+    overflow: hidden;
+}
+
+.storage-bar-fill {
+    height: 100%;
+    background: var(--success);
+    width: 0%;
+    transition: width 0.5s;
+}
+
+.storage-full .storage-bar-fill {
+    background: var(--danger);
+}
+
+/* --- CHAT --- */
+.chat-container {
+    position: fixed;
+    bottom: 0;
+    right: 20px;
+    width: 300px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.5);
+    z-index: 2000;
+}
+
+.chat-header {
+    background: var(--primary);
+    padding: 10px;
+    cursor: pointer;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    font-weight: bold;
+}
+
+.chat-body {
+    display: none; /* Toggle via JS */
+    height: 300px;
+    flex-direction: column;
+}
+
+.chat-messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 10px;
+    background: #151515;
+    font-size: 0.9em;
+}
+
+.chat-msg {
+    margin-bottom: 5px;
+    word-wrap: break-word;
+}
+
+.chat-msg .time {
+    color: var(--text-muted);
+    font-size: 0.8em;
+    margin-right: 5px;
+}
+
+.chat-msg .user {
+    font-weight: bold;
+    color: var(--info);
+    margin-right: 5px;
+}
+
+.chat-msg.admin .user {
+    color: var(--danger);
+}
+
+.chat-msg.system .user {
+    color: var(--warning);
+}
+
+.chat-input-area {
+    display: flex;
+    padding: 5px;
+    border-top: 1px solid var(--border);
+    background: #222;
+}
+
+.chat-input-area input {
+    flex-grow: 1;
+    padding: 5px;
+    background: #333;
+    border: 1px solid #444;
+    color: white;
+    border-radius: 3px;
+}
+
+.chat-input-area button {
+    margin-left: 5px;
+    padding: 5px 10px;
+    background: var(--primary);
+    border: none;
+    color: white;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+/* --- MODAL --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5000;
+}
+
+.modal-content {
+    background: var(--bg-card);
+    width: 400px;
+    max-width: 90%;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.progress-bar {
+    height: 10px;
+    background: #111;
+    border-radius: 5px;
+    overflow: hidden;
+    margin-top: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--info));
+    transition: width 0.5s;
+}
+
+/* --- UTILS --- */
+.btn {
+    padding: 8px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    color: white;
+    text-decoration: none;
+    display: inline-block;
+    transition: background 0.2s;
+}
+
+.btn-primary { background: var(--primary); }
+.btn-primary:hover { background: var(--primary-hover); }
+
+.btn-secondary { background: var(--secondary); }
+.btn-success { background: var(--success); }
+.btn-danger { background: var(--danger); }
+.btn-warning { background: var(--warning); color: #000; }
+.btn-info { background: var(--info); color: #000; }
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 0.8em;
+}
+
+.btn-xs {
+    padding: 2px 5px;
+    font-size: 0.7em;
+    background: #444;
+}
+
+.btn-block {
+    display: block;
+    width: 100%;
+}
+
+.form-input {
+    background: #252525;
+    border: 1px solid #444;
+    color: white;
+    padding: 8px;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+}
+
+.input-group {
+    display: flex;
+    gap: 5px;
+}
+
+/* Rarity Colors */
+.rarity-1 { border-color: #555; }
+.rarity-text-1 { color: #ccc; }
+
+.rarity-2 { border-color: var(--primary); }
+.rarity-text-2 { color: #64b5f6; }
+
+.rarity-3 { border-color: var(--epic); }
+.rarity-text-3 { color: var(--epic); }
+
+.rarity-4 { border-color: var(--legendary); }
+.rarity-text-4 { color: var(--legendary); text-shadow: 0 0 5px rgba(255, 235, 59, 0.5); }
+
+/* Animations */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Expedition Items */
+.exp-item {
+    background: #252525;
+    padding: 10px;
+    margin-bottom: 5px;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 1px solid #333;
+    transition: 0.2s;
+}
+.exp-item:hover {
+    background: #303030;
+    border-color: var(--primary);
+}
+.event-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--bg-card);
+    padding: 20px;
+    border: 2px solid var(--warning);
+    border-radius: 10px;
+    z-index: 6000;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
+    text-align: center;
+    width: 300px;
+}
+.event-title {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: var(--warning);
+    margin-bottom: 10px;
+}
+.event-actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+/* Value Animations */
+@keyframes flashGreen {
+    0% { color: var(--text-main); }
+    50% { color: var(--success); transform: scale(1.1); }
+    100% { color: var(--text-main); }
+}
+
+@keyframes flashRed {
+    0% { color: var(--text-main); }
+    50% { color: var(--danger); transform: scale(1.1); }
+    100% { color: var(--text-main); }
+}
+
+.anim-increase {
+    animation: flashGreen 1s ease;
+}
+
+.anim-decrease {
+    animation: flashRed 1s ease;
+}
+
+.trend-up {
+    color: var(--success);
+    font-weight: bold;
+}
+
+.trend-down {
+    color: var(--danger);
+    font-weight: bold;
+}

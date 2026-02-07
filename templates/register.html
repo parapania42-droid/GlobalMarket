@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Market - Kayıt Ol</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="card login-box">
+            <h1>🌍 Global Market</h1>
+            <p style="color:var(--text-muted)">Yeni bir hesap oluşturun.</p>
+            <div style="margin-top: 30px;">
+                <input type="text" id="reg-username" placeholder="Kullanıcı Adı" autocomplete="off">
+                <input type="password" id="reg-password" placeholder="Şifre" autocomplete="off" style="margin-top:10px;">
+                <button class="btn" style="width:100%; margin-top:20px;" onclick="register()">Kayıt Ol</button>
+            </div>
+            <div style="margin-top: 20px; text-align: center;">
+                <a href="/login" style="color:var(--primary); text-decoration:none;">Zaten hesabın var mı? Giriş Yap</a>
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
