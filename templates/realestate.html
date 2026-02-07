@@ -4,10 +4,85 @@
 <div class="container main-game-area">
     <div class="card">
         <div class="card-header">
-            <h2>🏢 Emlak ve Binalar</h2>
-            <div class="hint-text">Depo, Ofis, Konut, Ticaret Merkezi gibi binalar.</div>
+            <h2>🏢 Emlak</h2>
+            <div class="hint-text">Arazi satın al ve pasif kira geliri elde et.</div>
         </div>
-        <div class="hint-text">Bu bölüm genişletilecek. Şimdilik önizleme.</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
+            <div>
+                <h3>Sahip Olunan Araziler</h3>
+                <div id="owned-lands"></div>
+            </div>
+            <div>
+                <h3>Yeni Arazi Satın Al</h3>
+                <div class="form">
+                    <label>Tür</label>
+                    <select id="land-type" class="form-input"></select>
+                    <label>Boyut</label>
+                    <select id="land-size" class="form-input"></select>
+                    <label>Lokasyon</label>
+                    <select id="land-location" class="form-input"></select>
+                    <div id="land-price" class="hint-text" style="margin:8px 0">Fiyat: -</div>
+                    <button class="btn btn-primary btn-block" onclick="buyLand()">SATIN AL</button>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+let landOptions = null;
+function calcPrice(type, size, location) {
+    if (!landOptions) return 0;
+    const base = landOptions.options[type].base_price;
+    const sm = landOptions.sizes[size];
+    const lm = landOptions.options[type].locations[location];
+    return Math.round(base * sm * lm);
+}
+async function loadLands() {
+    const res = await fetch('/api/land/list');
+    const data = await res.json();
+    landOptions = data;
+    const owned = document.getElementById('owned-lands');
+    if (data.owned.length === 0) {
+        owned.innerHTML = '<div class="hint-text">Henüz araziniz yok.</div>';
+    } else {
+        owned.innerHTML = data.owned.map(l => `
+            <div class="inventory-item" style="display:flex; justify-content:space-between;">
+                <div>${l.size} ${l.type} - ${l.location}</div>
+                <div style="font-weight:bold">${new Intl.NumberFormat('tr-TR').format(l.price)} TL</div>
+            </div>
+        `).join('');
+    }
+    const typeSel = document.getElementById('land-type');
+    const sizeSel = document.getElementById('land-size');
+    const locSel = document.getElementById('land-location');
+    typeSel.innerHTML = Object.keys(data.options).map(k => `<option>${k}</option>`).join('');
+    sizeSel.innerHTML = Object.keys(data.sizes).map(k => `<option>${k}</option>`).join('');
+    locSel.innerHTML = Object.keys(data.options[typeSel.value || Object.keys(data.options)[0]].locations).map(k => `<option>${k}</option>`).join('');
+    updatePrice();
+    typeSel.onchange = () => {
+        locSel.innerHTML = Object.keys(data.options[typeSel.value].locations).map(k => `<option>${k}</option>`).join('');
+        updatePrice();
+    };
+    sizeSel.onchange = updatePrice;
+    locSel.onchange = updatePrice;
+}
+function updatePrice() {
+    const t = document.getElementById('land-type').value;
+    const s = document.getElementById('land-size').value;
+    const l = document.getElementById('land-location').value;
+    const p = calcPrice(t, s, l);
+    document.getElementById('land-price').textContent = 'Fiyat: ' + new Intl.NumberFormat('tr-TR').format(p) + ' TL';
+}
+async function buyLand() {
+    const t = document.getElementById('land-type').value;
+    const s = document.getElementById('land-size').value;
+    const l = document.getElementById('land-location').value;
+    const res = await fetch('/api/land/buy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type: t, size: s, location: l})});
+    const d = await res.json();
+    alert(d.message || '');
+    if (d.success) loadLands();
+}
+document.addEventListener('DOMContentLoaded', loadLands);
+</script>
 {% endblock %}

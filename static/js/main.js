@@ -47,6 +47,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (e.key === 'Enter') sendChat();
             });
         }
+        // Home widgets: prices, news, leaderboard
+        fetchPricesHome();
+        fetchNewsHome();
+        fetchLeaderboardHome();
+        setInterval(fetchPricesHome, 10000);
+        setInterval(fetchNewsHome, 60000);
+        setInterval(fetchLeaderboardHome, 15000);
     }
 });
 
@@ -469,6 +476,57 @@ function renderMarket(data) {
     `}).join('');
 }
 
+// ---------------- HOME DASHBOARD WIDGETS ----------------
+async function fetchPricesHome() {
+    try {
+        const res = await fetch('/api/market/prices');
+        if (!res.ok) return;
+        const rows = await res.json();
+        const list = document.getElementById('home-price-list');
+        if (!list) return;
+        const priceHtml = rows.map(p => {
+            const arrow = p.last_change > 0.001 ? '<span style="color:var(--danger)">↑</span>' : (p.last_change < -0.001 ? '<span style="color:var(--success)">↓</span>' : '<span style="color:var(--warning)">•</span>');
+            return `
+            <div class="inventory-item" style="display:flex; justify-content:space-between;">
+                <div>${p.item}</div>
+                <div style="font-weight:bold">${formatMoney(Math.round(p.price))} ${arrow}</div>
+            </div>`;
+        }).join('');
+        list.innerHTML = priceHtml;
+    } catch (e) {}
+}
+
+async function fetchNewsHome() {
+    try {
+        const res = await fetch('/api/news');
+        if (!res.ok) return;
+        const rows = await res.json();
+        const box = document.getElementById('home-news-list');
+        if (!box) return;
+        box.innerHTML = rows.map(n => `
+            <div class="inventory-item" style="display:flex; justify-content:space-between;">
+                <div style="font-weight:bold">📰 ${n.title}</div>
+                <div style="font-size:0.8em; color:var(--text-muted)">${new Date(n.created_at * 1000).toLocaleTimeString('tr-TR')}</div>
+            </div>
+        `).join('');
+    } catch (e) {}
+}
+
+async function fetchLeaderboardHome() {
+    try {
+        const tbody = document.getElementById('home-leaderboard-body');
+        if (!tbody) return;
+        const res = await fetch('/api/leaderboard');
+        const data = await res.json();
+        tbody.innerHTML = data.slice(0, 10).map((u, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${u.username}</td>
+                <td style="font-weight:bold">${formatMoney(u.net_worth)}</td>
+            </tr>
+        `).join('');
+    } catch (e) {}
+}
 function renderMissions(player) {
     const missionBox = document.getElementById('mission-box');
     if (!missionBox) return;

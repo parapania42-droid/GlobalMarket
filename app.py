@@ -18,13 +18,13 @@ lock = threading.Lock()
 # ---------------------------------------------------------
 
 FACTORY_CONFIG = {
-    "wood": {"name": "Kereste Fabrikası", "cost": 100, "rate": 10, "capacity": 100, "unlock_lvl": 1, "type": "Odun"},
+    "wood": {"name": "Odun Fabrikası", "cost": 100, "rate": 10, "capacity": 100, "unlock_lvl": 1, "type": "Odun"},
     "stone": {"name": "Taş Ocağı", "cost": 500, "rate": 5, "capacity": 50, "unlock_lvl": 2, "type": "Taş"},
     "iron": {"name": "Demir Madeni", "cost": 2000, "rate": 3, "capacity": 30, "unlock_lvl": 3, "type": "Demir"},
-    "gold": {"name": "Altın Madeni", "cost": 10000, "rate": 1, "capacity": 10, "unlock_lvl": 5, "type": "Altın"},
-    "diamond": {"name": "Elmas Madeni", "cost": 50000, "rate": 0.5, "capacity": 5, "unlock_lvl": 10, "type": "Elmas"},
-    "oil": {"name": "Petrol Rafinerisi", "cost": 100000, "rate": 2, "capacity": 20, "unlock_lvl": 15, "type": "Petrol"},
-    "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik"}
+    "coal": {"name": "Kömür Madeni", "cost": 1500, "rate": 4, "capacity": 40, "unlock_lvl": 3, "type": "Kömür"},
+    "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik"},
+    "plastic": {"name": "Plastik Fabrikası", "cost": 500000, "rate": 1.5, "capacity": 20, "unlock_lvl": 25, "type": "Plastik"},
+    "electronics": {"name": "Elektronik Fabrikası", "cost": 1000000, "rate": 0.8, "capacity": 10, "unlock_lvl": 30, "type": "Elektronik"}
 }
 
 # ---------------------------------------------------------
@@ -143,6 +143,47 @@ def init_db():
             )
         ''')
         
+        # Global Prices table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS prices (
+                item TEXT PRIMARY KEY,
+                price REAL NOT NULL,
+                last_change REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        ''')
+        
+        # Market News table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS news (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                body TEXT,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
+        # Factory Assignments
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS factory_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                factory_type TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                created_at REAL NOT NULL
+            )
+        ''')
+        
+        # Seed default prices if empty
+        items = ["Odun","Taş","Demir","Kömür","Buğday","Çelik","Plastik","Elektronik"]
+        base_prices = {
+            "Odun": 20, "Taş": 25, "Demir": 100, "Kömür": 40, "Buğday": 15,
+            "Çelik": 300, "Plastik": 200, "Elektronik": 800
+        }
+        for it in items:
+            c.execute('INSERT OR IGNORE INTO prices (item, price, last_change, updated_at) VALUES (?, ?, ?, ?)',
+                      (it, base_prices[it], 0.0, time.time()))
+        
         conn.commit()
         conn.close()
         print("Database initialized successfully.")
@@ -257,7 +298,21 @@ def calculate_production(user):
         if boost_end > now:
             is_boosted = True
         
-        rate = conf["rate"] * level * prod_mult
+        # Running status
+        running = True
+        running_map = user.get("factory_running", {})
+        if fid in running_map:
+            running = bool(running_map[fid])
+        # Worker assignment multiplier
+        conn = get_db_connection()
+        assigned = conn.execute('SELECT COALESCE(SUM(count),0) AS c FROM factory_assignments WHERE owner = ? AND factory_type = ?', 
+                                (user["username"], fid)).fetchone()['c']
+        conn.close()
+        worker_mult = 1.0 + (0.05 * assigned)
+        
+        rate = conf["rate"] * level * prod_mult * worker_mult
+        if not running:
+            rate = 0
         if is_boosted: rate *= 2
         
         produced = rate * elapsed_min
@@ -339,6 +394,11 @@ def leaderboard_page():
 def guide_page():
     return render_template('guide.html', active_page='guide')
 
+@app.route('/market')
+def market_page():
+    if 'username' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('market.html', active_page='market')
 @app.route('/factory')
 def factory_page():
     if 'username' not in session:
@@ -627,6 +687,30 @@ def api_resources():
 def api_market():
     conn = get_db_connection()
     listings = conn.execute('SELECT * FROM market ORDER BY time DESC LIMIT 50').fetchall()
+    # Attach prices snapshot
+    prices_rows = conn.execute('SELECT * FROM prices').fetchall()
+    # Simple supply/demand based tweak on each call (10s gate)
+    now = time.time()
+    for pr in prices_rows:
+        last_upd = pr['updated_at']
+        if now - last_upd >= 10:
+            # Demand proxy: count of listings with low stock vs high
+            # Supply proxy: resources table aggregate
+            items = [r['item'] for r in listings]
+            demand_factor = items.count(pr['item']) * 0.01
+            supply_rows = conn.execute('SELECT COALESCE(SUM(quantity),0) AS q FROM resources WHERE item = ?', (pr['item'],)).fetchone()
+            supply_q = supply_rows['q']
+            supply_factor = (supply_q / 1000.0) * 0.01
+            delta = (demand_factor - supply_factor)
+            # Clamp delta
+            delta = max(-0.05, min(0.05, delta))
+            new_price = max(1.0, pr['price'] * (1.0 + delta))
+            last_change = new_price - pr['price']
+            conn.execute('UPDATE prices SET price = ?, last_change = ?, updated_at = ? WHERE item = ?',
+                         (new_price, last_change, now, pr['item']))
+    conn.commit()
+    # Re-read
+    prices_rows = conn.execute('SELECT * FROM prices').fetchall()
     conn.close()
     
     items = {
@@ -649,8 +733,42 @@ def api_market():
     return jsonify({
         "listings": [dict(ix) for ix in listings],
         "items": items,
-        "economy": economy
+        "economy": economy,
+        "prices": [dict(p) for p in prices_rows]
     })
+
+@app.route('/api/market/prices')
+def api_market_prices():
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM prices').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/news')
+def api_news():
+    conn = get_db_connection()
+    last = conn.execute('SELECT * FROM news ORDER BY id DESC LIMIT 1').fetchone()
+    now = time.time()
+    if not last or (now - last['created_at']) > random.randint(300, 600):
+        choices = ["Odun","Demir","Taş","Kömür","Buğday","Çelik","Plastik","Elektronik"]
+        it = random.choice(choices)
+        direction = random.choice(['up','down'])
+        title = f"{it} {'talebi yükseldi' if direction=='up' else 'üretimi arttı'}"
+        body = "Piyasa haberleri fiyatları etkiliyor."
+        conn.execute('INSERT INTO news (title, body, created_at) VALUES (?, ?, ?)', (title, body, now))
+        # Apply small price nudge
+        pr = conn.execute('SELECT * FROM prices WHERE item = ?', (it,)).fetchone()
+        if pr:
+            factor = 1.03 if direction == 'up' else 0.97
+            new_price = max(1.0, pr['price'] * factor)
+            conn.execute('UPDATE prices SET price = ?, last_change = ?, updated_at = ? WHERE item = ?', 
+                         (new_price, new_price - pr['price'], now, it))
+        conn.commit()
+        last = conn.execute('SELECT * FROM news ORDER BY id DESC LIMIT 1').fetchone()
+    # Return recent 10
+    rows = conn.execute('SELECT * FROM news ORDER BY id DESC LIMIT 10').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
 
 @app.route('/buy', methods=['POST'])
 def buy():
@@ -762,7 +880,8 @@ def factory_status(fid):
         "next_cost": next_cost,
         "next_mat": next_mat,
         "next_mat_cost": next_mat_cost,
-        "is_boosted": u.get("factory_boosts", {}).get(fid, 0) > time.time()
+        "is_boosted": u.get("factory_boosts", {}).get(fid, 0) > time.time(),
+        "running": bool(u.get("factory_running", {}).get(fid, True))
     })
 
 @app.route('/api/upgrade_factory/<fid>', methods=['POST'])
@@ -791,6 +910,94 @@ def upgrade_factory(fid):
         save_user(u)
         
     return jsonify({"success": True, "message": "Fabrika yükseltildi!"})
+
+@app.route('/api/factories')
+def api_factories():
+    if 'username' not in session: return jsonify([]), 401
+    u = get_user(session['username'])
+    conn = get_db_connection()
+    rows = []
+    for fid, conf in FACTORY_CONFIG.items():
+        lvl = u.get('factories', {}).get(fid, 0)
+        running = bool(u.get('factory_running', {}).get(fid, True))
+        assigned = conn.execute('SELECT COALESCE(SUM(count),0) AS c FROM factory_assignments WHERE owner = ? AND factory_type = ?', 
+                                (u['username'], fid)).fetchone()['c']
+        # rate per hour (base rate per minute * 60)
+        rate_per_hour = int(conf['rate'] * max(1,lvl) * (1 + 0.05 * assigned) * (1 if running else 0))
+        # approximate price from global prices
+        pr = conn.execute('SELECT price FROM prices WHERE item = ?', (conf['type'],)).fetchone()
+        price = pr['price'] if pr else 0
+        daily_income = int(rate_per_hour * 24 * price)
+        rows.append({
+            "type": fid, "name": conf['name'], "level": lvl, "running": running,
+            "rate_per_hour": rate_per_hour, "worker_count": assigned, "daily_income": daily_income
+        })
+    conn.close()
+    return jsonify(rows)
+
+@app.route('/api/factory/start', methods=['POST'])
+def api_factory_start():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['username'])
+    fid = request.json.get('type')
+    if fid not in FACTORY_CONFIG: return jsonify({"success": False, "message": "Geçersiz fabrika!"})
+    with lock:
+        fr = u.get('factory_running', {})
+        fr[fid] = True
+        u['factory_running'] = fr
+        save_user(u)
+    return jsonify({"success": True, "message": "Üretim başlatıldı"})
+
+@app.route('/api/factory/stop', methods=['POST'])
+def api_factory_stop():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['username'])
+    fid = request.json.get('type')
+    if fid not in FACTORY_CONFIG: return jsonify({"success": False, "message": "Geçersiz fabrika!"})
+    with lock:
+        fr = u.get('factory_running', {})
+        fr[fid] = False
+        u['factory_running'] = fr
+        save_user(u)
+    return jsonify({"success": True, "message": "Üretim durduruldu"})
+
+@app.route('/api/factory/assign_workers', methods=['POST'])
+def api_factory_assign_workers():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['username'])
+    fid = request.json.get('type')
+    count = int(request.json.get('count', 0))
+    if fid not in FACTORY_CONFIG or count <= 0:
+        return jsonify({"success": False, "message": "Geçersiz parametre!"})
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM factory_assignments WHERE owner = ? AND factory_type = ?', (u['username'], fid)).fetchone()
+    if row:
+        conn.execute('UPDATE factory_assignments SET count = count + ? WHERE id = ?', (count, row['id']))
+    else:
+        conn.execute('INSERT INTO factory_assignments (owner, factory_type, count, created_at) VALUES (?, ?, ?, ?)',
+                     (u['username'], fid, count, time.time()))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "İşçi atandı"})
+
+@app.route('/api/factory/unassign_workers', methods=['POST'])
+def api_factory_unassign_workers():
+    if 'username' not in session: return jsonify({"success": False}), 401
+    u = get_user(session['username'])
+    fid = request.json.get('type')
+    count = int(request.json.get('count', 0))
+    if fid not in FACTORY_CONFIG or count <= 0:
+        return jsonify({"success": False, "message": "Geçersiz parametre!"})
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM factory_assignments WHERE owner = ? AND factory_type = ?', (u['username'], fid)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "message": "Atama bulunamadı"})
+    newc = max(0, row['count'] - count)
+    conn.execute('UPDATE factory_assignments SET count = ? WHERE id = ?', (newc, row['id']))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "İşçi çıkarıldı"})
 
 @app.route('/api/factory/collect', methods=['POST'])
 def collect_factory():

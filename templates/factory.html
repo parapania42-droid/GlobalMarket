@@ -5,31 +5,72 @@
     <div class="card">
         <div class="card-header">
             <h2>🏭 Fabrikalar</h2>
-            <div class="hint-text">Fabrikalarınızı Game sayfasından da yönetebilirsiniz.</div>
+            <div class="hint-text">Fabrika durumları, işçi atamaları ve üretim kontrolü.</div>
         </div>
-        <div id="factory-list" class="inventory-grid"></div>
+        <div id="factory-list"></div>
     </div>
-</div>
+    </div>
 
 <script>
 async function loadFactories() {
-    const res = await fetch('/api/me');
+    const res = await fetch('/api/factories');
     if (!res.ok) return;
-    const me = await res.json();
+    const data = await res.json();
     const list = document.getElementById('factory-list');
-    const configs = me.factory_config || {};
-    const entries = Object.entries(configs);
-    if (entries.length === 0) {
-        list.innerHTML = '<div class="hint-text">Fabrika yapılandırması boş.</div>';
+    if (!data.length) {
+        list.innerHTML = '<div class="hint-text">Fabrikanız yok veya veriler yüklenemedi.</div>';
         return;
     }
-    list.innerHTML = entries.map(([fid, conf]) => `
-        <div class="inventory-item" style="display:flex; justify-content:space-between;">
-            <div>🏭 ${conf.name}</div>
-            <div>Lv. ${me.factories[fid] || 0}</div>
+    list.innerHTML = data.map(f => `
+      <div class="factory-card" style="padding: 15px; border:1px solid #333; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-weight:bold">${f.name}</div>
+          <div>Lv. ${f.level}</div>
         </div>
+        <div style="display:grid; grid-template-columns: repeat(2,1fr); gap:5px; margin-top:5px;">
+          <div>Üretim (saatlik): <strong>${f.rate_per_hour}</strong></div>
+          <div>İşçi Sayısı: <strong>${f.worker_count}</strong></div>
+          <div>Günlük Gelir: <strong>${f.daily_income} TL</strong></div>
+          <div>Durum: <strong>${f.running ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
+        </div>
+        <div style="display:flex; gap:5px; margin-top:8px;">
+          <button class="btn btn-success btn-sm" onclick="factoryStart('${f.type}')">Üretimi Başlat</button>
+          <button class="btn btn-warning btn-sm" onclick="factoryStop('${f.type}')">Üretimi Durdur</button>
+          <button class="btn btn-primary btn-sm" onclick="upgradeFactory('${f.type}')">Seviye Yükselt</button>
+        </div>
+        <div style="display:flex; gap:5px; margin-top:8px;">
+          <input type="number" id="assign-${f.type}" class="form-input" placeholder="İşçi adedi">
+          <button class="btn btn-secondary btn-sm" onclick="assignWorkers('${f.type}')">İşçi Ekle</button>
+          <button class="btn btn-secondary btn-sm" onclick="unassignWorkers('${f.type}')">İşçi Çıkar</button>
+        </div>
+      </div>
     `).join('');
 }
 document.addEventListener('DOMContentLoaded', loadFactories);
+
+async function factoryStart(type) {
+  const res = await fetch('/api/factory/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type})});
+  const d = await res.json(); alert(d.message || '');
+  loadFactories();
+}
+async function factoryStop(type) {
+  const res = await fetch('/api/factory/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type})});
+  const d = await res.json(); alert(d.message || '');
+  loadFactories();
+}
+async function assignWorkers(type) {
+  const count = parseInt(document.getElementById('assign-'+type).value || '0');
+  if (!count || count <= 0) return alert('Geçerli adet girin');
+  const res = await fetch('/api/factory/assign_workers', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type, count})});
+  const d = await res.json(); alert(d.message || '');
+  loadFactories();
+}
+async function unassignWorkers(type) {
+  const count = parseInt(document.getElementById('assign-'+type).value || '0');
+  if (!count || count <= 0) return alert('Geçerli adet girin');
+  const res = await fetch('/api/factory/unassign_workers', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type, count})});
+  const d = await res.json(); alert(d.message || '');
+  loadFactories();
+}
 </script>
 {% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container main-game-area">
+    <div class="card">
+        <div class="card-header">
+            <h2>💰 Canlı Piyasa</h2>
+            <div class="hint-text">Fiyatlar tüm oyuncular için ortaktır ve arz-talebe göre değişir.</div>
+        </div>
+        <div id="price-list" class="inventory-grid"></div>
+    </div>
+</div>
+
+<script>
+function arrow(change) {
+    if (change > 0.001) return '<span style="color:var(--danger)">↑</span>';
+    if (change < -0.001) return '<span style="color:var(--success)">↓</span>';
+    return '<span style="color:var(--warning)">•</span>';
+}
+async function loadPrices() {
+    const res = await fetch('/api/market/prices');
+    const data = await res.json();
+    const list = document.getElementById('price-list');
+    list.innerHTML = data.map(p => `
+        <div class="inventory-item" style="display:flex; justify-content:space-between;">
+            <div>${p.item}</div>
+            <div style="font-weight:bold">${new Intl.NumberFormat('tr-TR').format(p.price.toFixed ? p.price.toFixed(0) : p.price)} TL ${arrow(p.last_change)}</div>
+        </div>
+    `).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+    loadPrices();
+    setInterval(loadPrices, 10000);
+});
+</script>
+{% endblock %}
