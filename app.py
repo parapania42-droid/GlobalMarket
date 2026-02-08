@@ -9,13 +9,18 @@ import urllib.request
 import urllib.error
 import shutil
 from datetime import timedelta
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "globalmarket_secret_key"
+app.secret_key = os.getenv("SECRET_KEY", "globalmarket_dev_secret")
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax"
+)
 
 # Concurrency lock
 lock = threading.Lock()
@@ -729,11 +734,17 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     if request.method == 'GET':
+        if 'user_id' in session:
+            return redirect(url_for('game'))
         return render_template('login.html')
         
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
+    if request.is_json:
+        data = request.json
+        username = data.get('username')
+        password = data.get('password')
+    else:
+        username = request.form.get('username')
+        password = request.form.get('password')
     
     conn = get_db_connection()
     user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
@@ -762,7 +773,9 @@ def login_page():
             session['uid'] = uid
         # admin flag
         session['is_admin'] = bool(u.get('is_admin', False))
-        return jsonify({"success": True})
+        if request.is_json:
+            return jsonify({"success": True})
+        return redirect(url_for('game'))
     
     return jsonify({"success": False, "message": "Hatalı kullanıcı adı veya şifre!"})
 
@@ -785,12 +798,23 @@ def register():
 
 @app.route('/logout')
 def logout():
+    session.clear()
     return redirect(url_for('login_page'))
 
 @app.route('/logout', methods=['POST'])
 def logout_post():
     session.clear()
     return jsonify({"success": True, "redirect": "/login"})
+
+@app.before_request
+def load_user():
+    try:
+        if 'user_id' in session:
+            g.user = get_user(session['user_id'])
+        else:
+            g.user = None
+    except Exception:
+        g.user = None
 
 @app.route('/game')
 def game():
