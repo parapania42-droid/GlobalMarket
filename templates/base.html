@@ -91,12 +91,27 @@
             <span style="font-size:1.2em">📖</span>
             <span>Rehber</span>
         </a>
+        <a href="#" class="nav-item" onclick="logout()" style="color: var(--warning);">
+            <span style="font-size:1.2em">🚪</span>
+            <span>Çıkış Yap</span>
+        </a>
     </nav>
 
     <script src="/static/js/main.js"></script>
     <script>
         // Check active page to highlight nav
         // Also check if admin to show admin button (backup to main.js)
+        async function logout() {
+            try {
+                const res = await fetch('/logout', { method: 'POST' });
+                const data = await res.json();
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                }
+            } catch(e) {
+                window.location.href = '/login';
+            }
+        }
     </script>
 </body>
 </html>

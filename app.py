@@ -4,6 +4,10 @@ import time
 import random
 import threading
 import os
+import base64
+import urllib.request
+import urllib.error
+import shutil
 from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -51,12 +55,121 @@ FACTORY_CONFIG = {
 # ---------------------------------------------------------
 
 def get_db_connection():
-    conn = sqlite3.connect('globalmarket.db')
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_path = os.path.join(base_dir, "globalmarket.db")
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
+def _repo_cfg():
+    repo = os.environ.get("GITHUB_REPO", "").strip()
+    branch = os.environ.get("GITHUB_BRANCH", "main").strip()
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    return repo, branch, token
+
+def restore_database_if_needed():
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_path = os.path.join(base_dir, "globalmarket.db")
+    needs_restore = True
+    try:
+        if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
+            needs_restore = False
+    except Exception:
+        needs_restore = True
+    if not needs_restore:
+        return
+    repo, branch, token = _repo_cfg()
+    restored = False
+    if repo:
+        try:
+            url = f"https://api.github.com/repos/{repo}/contents/backup/globalmarket.db?ref={branch}"
+            headers = {"Accept": "application/vnd.github+json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req) as resp:
+                data = resp.read().decode("utf-8")
+                j = json.loads(data)
+                content_b64 = j.get("content", "").replace("\n", "")
+                if content_b64:
+                    raw = base64.b64decode(content_b64)
+                    with open(db_path, "wb") as f:
+                        f.write(raw)
+                    print("Database restored from GitHub backup")
+                    restored = True
+        except Exception:
+            restored = False
+    if not restored:
+        try:
+            backup_path = os.path.join(base_dir, "backup", "globalmarket.db")
+            if os.path.exists(backup_path) and os.path.getsize(backup_path) > 0:
+                shutil.copyfile(backup_path, db_path)
+                print("Database restored from GitHub backup")
+        except Exception:
+            pass
+
+def backup_database():
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_path = os.path.join(base_dir, "globalmarket.db")
+    backup_dir = os.path.join(base_dir, "backup")
+    ts_file = os.path.join(backup_dir, ".last_backup")
+    try:
+        if not os.path.exists(db_path) or os.path.getsize(db_path) <= 0:
+            return
+    except Exception:
+        return
+    os.makedirs(backup_dir, exist_ok=True)
+    try:
+        if os.path.exists(ts_file):
+            last_ts = os.path.getmtime(ts_file)
+            if time.time() - last_ts < 120:
+                return
+    except Exception:
+        pass
+    try:
+        shutil.copyfile(db_path, os.path.join(backup_dir, "globalmarket.db"))
+    except Exception:
+        return
+    repo, branch, token = _repo_cfg()
+    pushed = False
+    if repo and token:
+        try:
+            get_url = f"https://api.github.com/repos/{repo}/contents/backup/globalmarket.db?ref={branch}"
+            headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"}
+            sha = None
+            try:
+                req = urllib.request.Request(get_url, headers=headers)
+                with urllib.request.urlopen(req) as resp:
+                    j = json.loads(resp.read().decode("utf-8"))
+                    sha = j.get("sha")
+            except urllib.error.HTTPError:
+                sha = None
+            with open(db_path, "rb") as f:
+                content_b64 = base64.b64encode(f.read()).decode("ascii")
+            payload = {"message": "Database backup", "content": content_b64, "branch": branch}
+            if sha:
+                payload["sha"] = sha
+            put_url = f"https://api.github.com/repos/{repo}/contents/backup/globalmarket.db"
+            req_put = urllib.request.Request(put_url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="PUT")
+            with urllib.request.urlopen(req_put) as resp:
+                code = resp.getcode()
+                if code in (200, 201):
+                    pushed = True
+        except Exception:
+            pushed = False
+    try:
+        with open(ts_file, "w") as f:
+            f.write(str(time.time()))
+    except Exception:
+        pass
+    if pushed:
+        print("Database backup pushed to GitHub")
+    else:
+        print("Database backup written locally")
+
 def init_db():
     try:
+        restore_database_if_needed()
         conn = get_db_connection()
         c = conn.cursor()
         
@@ -66,6 +179,23 @@ def init_db():
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
                 data TEXT NOT NULL
+            )
+        ''')
+        # Stable user id mapping table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_ids (
+                username TEXT PRIMARY KEY,
+                user_id INTEGER UNIQUE
+            )
+        ''')
+        # User logs table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                action TEXT,
+                amount REAL,
+                timestamp REAL
             )
         ''')
         
@@ -254,12 +384,37 @@ def init_db():
         
         conn.commit()
         conn.close()
-        print("Database initialized successfully.")
+        conn2 = get_db_connection()
+        total_users = conn2.execute('SELECT COUNT(*) AS c FROM users').fetchone()['c']
+        conn2.close()
+        print(f"Database initialized successfully. Total users: {total_users}")
+        if total_users == 0:
+            print("WARNING: User data lost!")
     except Exception as e:
         print(f"Database initialization failed: {e}")
 
 # Initialize DB immediately for Gunicorn/Render
 init_db()
+ 
+def _backfill_user_ids():
+    try:
+        conn = get_db_connection()
+        rows = conn.execute('SELECT username FROM users').fetchall()
+        max_row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
+        next_id = int(max_row['m']) + 1 if max_row and max_row['m'] else 1
+        for r in rows:
+            un = r['username']
+            exists = conn.execute('SELECT user_id FROM user_ids WHERE username = ?', (un,)).fetchone()
+            if not exists:
+                conn.execute('INSERT INTO user_ids (username, user_id) VALUES (?, ?)', (un, next_id))
+                next_id += 1
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+_backfill_user_ids()
+ 
+# Auto user creation removed to prevent test/default seeding
  
 # ---------------------------------------------------------
 # GLOBAL EVENT SYSTEM
@@ -402,6 +557,10 @@ def save_user(user_data):
                  (json.dumps(user_data), username))
     conn.commit()
     conn.close()
+    try:
+        backup_database()
+    except Exception:
+        pass
 
 def create_user(username, password):
     if get_user(username):
@@ -426,6 +585,7 @@ def create_user(username, password):
         "net_worth": 1000,
         "mission": {"description": "İlk fabrikanı kur!", "target_qty": 1, "current_qty": 0, "reward": 500},
         "last_active": time.time(),
+        "last_login": 0,
         "is_afk": False,
         "is_admin": False,
         "expedition": None, # {type, start_time, end_time, cost}
@@ -436,10 +596,48 @@ def create_user(username, password):
     conn = get_db_connection()
     conn.execute('INSERT INTO users (username, password_hash, data) VALUES (?, ?, ?)',
                  (username, pw_hash, json.dumps(initial_data)))
+    # assign stable user_id
+    row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
+    next_id = int(row['m']) + 1 if row and row['m'] else 1
+    conn.execute('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (?, ?)', (username, next_id))
+    conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (next_id, 'register', 0, time.time()))
     conn.commit()
     conn.close()
+    try:
+        backup_database()
+    except Exception:
+        pass
     return True
 
+# ---------------------------------------------------------
+# USER ID & LOG HELPERS
+# ---------------------------------------------------------
+def get_user_id_by_username(username):
+    try:
+        conn = get_db_connection()
+        row = conn.execute('SELECT user_id FROM user_ids WHERE username = ?', (username,)).fetchone()
+        conn.close()
+        return int(row['user_id']) if row and row['user_id'] is not None else None
+    except Exception:
+        return None
+
+def get_username_by_user_id(uid):
+    try:
+        conn = get_db_connection()
+        row = conn.execute('SELECT username FROM user_ids WHERE user_id = ?', (uid,)).fetchone()
+        conn.close()
+        return row['username'] if row else None
+    except Exception:
+        return None
+
+def log_user_action(uid, action, amount=0):
+    try:
+        conn = get_db_connection()
+        conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (uid, action, amount, time.time()))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 # ---------------------------------------------------------
 # GAME LOGIC HELPERS
 # ---------------------------------------------------------
@@ -539,12 +737,31 @@ def login_page():
     
     conn = get_db_connection()
     user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+    uid_row = conn.execute('SELECT user_id FROM user_ids WHERE username = ?', (username,)).fetchone()
     conn.close()
     
     if user and check_password_hash(user['password_hash'], password):
+        uid = uid_row['user_id'] if uid_row else None
+        # update last_login
+        u = get_user(username)
+        u['last_login'] = time.time()
+        save_user(u)
+        # log
+        if uid:
+            try:
+                conn2 = get_db_connection()
+                conn2.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (uid, 'login', 0, time.time()))
+                conn2.commit()
+                conn2.close()
+            except Exception:
+                pass
         session.permanent = True
         session['user_id'] = username
         session['username'] = username
+        if uid is not None:
+            session['uid'] = uid
+        # admin flag
+        session['is_admin'] = bool(u.get('is_admin', False))
         return jsonify({"success": True})
     
     return jsonify({"success": False, "message": "Hatalı kullanıcı adı veya şifre!"})
@@ -568,9 +785,12 @@ def register():
 
 @app.route('/logout')
 def logout():
-    session.pop('username', None)
-    session.pop('user_id', None)
     return redirect(url_for('login_page'))
+
+@app.route('/logout', methods=['POST'])
+def logout_post():
+    session.clear()
+    return jsonify({"success": True, "redirect": "/login"})
 
 @app.route('/game')
 def game():
@@ -750,10 +970,23 @@ def api_marketplace_buy():
         buyer['money'] -= cost
         buyer['inventory'][row['name']] = buyer['inventory'].get(row['name'], 0) + qty
         save_user(buyer)
+        # log user action
+        try:
+            uid_b = get_user_id_by_username(buyer['username'])
+            if uid_b:
+                log_user_action(uid_b, 'marketplace_buy', -cost)
+        except Exception:
+            pass
         seller = get_user(row['seller'])
         if seller:
             seller['money'] += cost
             save_user(seller)
+            try:
+                uid_s = get_user_id_by_username(seller['username'])
+                if uid_s:
+                    log_user_action(uid_s, 'marketplace_sale', cost)
+            except Exception:
+                pass
         new_stock = row['stock'] - qty
         if new_stock <= 0:
             conn.execute('DELETE FROM marketplace_products WHERE id = ?', (pid,))
@@ -1936,9 +2169,9 @@ def collect_expedition():
 
 @app.route('/admin')
 def admin_page():
-    if 'username' not in session:
+    if 'user_id' not in session:
         return redirect(url_for('login_page'))
-    if session['username'] != 'Paramen42':
+    if not session.get('is_admin'):
         return redirect(url_for('game'))
     
     conn = get_db_connection()
@@ -1950,10 +2183,17 @@ def admin_page():
     total_money = 0
     for r in rows:
         d = json.loads(r['data'])
+        conn2 = get_db_connection()
+        uid_row = conn2.execute('SELECT user_id FROM user_ids WHERE username = ?', (r['username'],)).fetchone()
+        conn2.close()
+        factories_count = len(d.get('factories', {}))
         users.append({
+            "user_id": uid_row['user_id'] if uid_row else None,
             "username": r['username'],
             "money": d.get('money', 0),
             "level": d.get('level', 1),
+            "factories_count": factories_count,
+            "last_login": d.get('last_login', 0),
             "is_banned": d.get('is_banned', False)
         })
         total_money += d.get('money', 0)
@@ -1969,7 +2209,7 @@ def admin_page():
 def _admin_guard():
     if 'user_id' not in session:
         return redirect(url_for('login_page'))
-    if session['username'] != 'Paramen42':
+    if not session.get('is_admin'):
         return redirect(url_for('game'))
     return None
 
@@ -1993,8 +2233,8 @@ def admin_control():
 
 @app.route('/api/admin/action', methods=['POST'])
 def admin_action():
-    if 'username' not in session: return jsonify({"success": False}), 401
-    if session['username'] != 'Paramen42': return jsonify({"success": False}), 403
+    if 'user_id' not in session: return jsonify({"success": False}), 401
+    if not session.get('is_admin'): return jsonify({"success": False}), 403
     
     data = request.json
     target = data.get('username')
@@ -2019,9 +2259,27 @@ def admin_action():
         if action == 'add_money':
             val = int(amount or 0)
             u['money'] = u.get('money', 0) + max(0, val)
+            try:
+                conn = get_db_connection()
+                uid_row = conn.execute('SELECT user_id FROM user_ids WHERE username = ?', (u['username'],)).fetchone()
+                if uid_row:
+                    conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (uid_row['user_id'], 'admin_add_money', val, time.time()))
+                    conn.commit()
+                conn.close()
+            except Exception:
+                pass
         elif action == 'remove_money':
             val = int(amount or 0)
             u['money'] = max(0, u.get('money', 0) - max(0, val))
+            try:
+                conn = get_db_connection()
+                uid_row = conn.execute('SELECT user_id FROM user_ids WHERE username = ?', (u['username'],)).fetchone()
+                if uid_row:
+                    conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (uid_row['user_id'], 'admin_remove_money', val, time.time()))
+                    conn.commit()
+                conn.close()
+            except Exception:
+                pass
         elif action == 'set_level':
             val = int(amount or 1)
             u['level'] = max(1, val)
@@ -2029,6 +2287,40 @@ def admin_action():
             u['is_banned'] = True
         elif action == 'unban_user':
             u['is_banned'] = False
+        elif action == 'reset_password':
+            # set new password
+            new_pw = str(amount or '').strip()
+            if len(new_pw) < 6:
+                return jsonify({"success": False, "message": "Yeni şifre en az 6 karakter!"})
+            conn = get_db_connection()
+            conn.execute('UPDATE users SET password_hash = ? WHERE username = ?', (generate_password_hash(new_pw), u['username']))
+            conn.commit()
+            conn.close()
+        elif action == 'rename_user':
+            new_name = str(amount or '').strip()
+            if not new_name:
+                return jsonify({"success": False, "message": "Yeni kullanıcı adı gerekli!"})
+            # enforce uniqueness
+            conn = get_db_connection()
+            exists = conn.execute('SELECT username FROM users WHERE username = ?', (new_name,)).fetchone()
+            if exists:
+                conn.close()
+                return jsonify({"success": False, "message": "Bu kullanıcı adı zaten alınmış"})
+            # update primary and all references
+            conn.execute('UPDATE users SET username = ? WHERE username = ?', (new_name, u['username']))
+            # update mapping
+            conn.execute('UPDATE user_ids SET username = ? WHERE username = ?', (new_name, u['username']))
+            # update related tables
+            for tbl_col in [
+                ('lands','owner'),('workers','owner'),('buildings','owner'),('resources','owner'),
+                ('factories','owner'),('transactions','owner'),('factory_assignments','owner'),
+                ('vehicles','owner'),('logistics_tasks','owner'),('marketplace_products','seller'),('chat','username')
+            ]:
+                tbl, col = tbl_col
+                conn.execute(f'UPDATE {tbl} SET {col} = ? WHERE {col} = ?', (new_name, u['username']))
+            conn.commit()
+            conn.close()
+            u['username'] = new_name
         elif action == 'give_land':
             if not meta or not all(k in meta for k in ['type','size','location']):
                 return jsonify({"success": False, "message": "Meta eksik: type,size,location"})
@@ -2054,6 +2346,12 @@ def admin_action():
                          (u['username'], 'admin_give_factory', 0, time.time(), json.dumps(meta)))
             conn.commit()
             conn.close()
+        elif action == 'set_factory_level':
+            if not meta or not all(k in meta for k in ['type','level']):
+                return jsonify({"success": False, "message": "Meta eksik: type,level"})
+            fid = meta['type']
+            lvl = int(meta['level'])
+            u.setdefault('factories', {})[fid] = lvl
         elif action == 'reset_economy':
             conn = get_db_connection()
             conn.execute('DELETE FROM lands WHERE owner = ?', (u['username'],))
@@ -2080,6 +2378,24 @@ def admin_action():
         save_user(u)
     
     return jsonify({"success": True, "message": "İşlem tamamlandı!"})
+
+@app.route('/api/admin/user_logs')
+def api_admin_user_logs():
+    guard = _admin_guard()
+    if guard: 
+        if isinstance(guard, str):
+            return jsonify({"success": False}), 403
+        return guard
+    username = request.args.get('username', '').strip()
+    if not username:
+        return jsonify([])
+    uid = get_user_id_by_username(username)
+    if not uid:
+        return jsonify([])
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM user_logs WHERE user_id = ? ORDER BY timestamp DESC LIMIT 200', (uid,)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
 
 if __name__ == '__main__':
     init_db()

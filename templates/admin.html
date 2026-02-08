@@ -65,9 +65,12 @@
                 <table style="width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr style="text-align: left; border-bottom: 1px solid #444;">
+                            <th style="padding: 10px;">ID</th>
                             <th style="padding: 10px;">Kullanıcı</th>
                             <th>Para</th>
                             <th>Level</th>
+                            <th>Fabrika</th>
+                            <th>Son Giriş</th>
                             <th>Durum</th>
                         </tr>
                     </thead>
@@ -75,9 +78,12 @@
                         <!-- JS ile doldurulacak veya server side render -->
                         {% for u in users %}
                         <tr style="border-bottom: 1px solid #333;">
+                            <td style="padding: 10px;">{{ u.user_id }}</td>
                             <td style="padding: 10px;">{{ u.username }}</td>
                             <td>{{ u.money }}</td>
                             <td>{{ u.level }}</td>
+                            <td>{{ u.factories_count }}</td>
+                            <td>{% if u.last_login %}{{ u.last_login|int }}{% else %}-{% endif %}</td>
                             <td>
                                 {% if u.is_banned %}
                                 <span style="color: var(--danger)">YASAKLI</span>
