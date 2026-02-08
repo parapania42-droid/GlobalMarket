@@ -13,7 +13,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "globalmarket_super_secret_key_123"
+app.secret_key = "globalmarket_fixed_secret_key"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 app.config.update(
@@ -175,6 +175,9 @@ def backup_database():
 def init_db():
     try:
         restore_database_if_needed()
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        db_path = os.path.join(base_dir, "globalmarket.db")
+        print("Database path:", db_path)
         conn = get_db_connection()
         c = conn.cursor()
         
@@ -393,6 +396,7 @@ def init_db():
         total_users = conn2.execute('SELECT COUNT(*) AS c FROM users').fetchone()['c']
         conn2.close()
         print(f"Database initialized successfully. Total users: {total_users}")
+        print("User count:", total_users)
         if total_users == 0:
             print("WARNING: User data lost!")
     except Exception as e:
@@ -418,6 +422,57 @@ def _backfill_user_ids():
     except Exception:
         pass
 _backfill_user_ids()
+ 
+# Ensure default admin exists without affecting other users
+def create_admin_if_not_exists():
+    try:
+        conn = get_db_connection()
+        row = conn.execute('SELECT username, data FROM users WHERE username = ?', ('Paramen42',)).fetchone()
+        if not row:
+            pw_hash = generate_password_hash('admin123')
+            initial_data = {
+                "username": "Paramen42",
+                "money": 0,
+                "level": 1,
+                "xp": 0,
+                "inventory": {},
+                "factories": {},
+                "factory_storage": {},
+                "factory_last_update": {},
+                "factory_last_collect": {},
+                "factory_run_start": {},
+                "factory_run_duration": {},
+                "factory_boosts": {},
+                "net_worth": 0,
+                "mission": None,
+                "last_active": time.time(),
+                "last_login": 0,
+                "is_afk": False,
+                "is_admin": True,
+                "expedition": None,
+                "last_daily_bonus": 0,
+                "workers_available": 0
+            }
+            conn.execute('INSERT INTO users (username, password_hash, data) VALUES (?, ?, ?)',
+                         ('Paramen42', pw_hash, json.dumps(initial_data)))
+            max_row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
+            next_id = int(max_row['m']) + 1 if max_row and max_row['m'] else 1
+            conn.execute('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (?, ?)', ('Paramen42', next_id))
+            conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (next_id, 'register', 0, time.time()))
+            conn.commit()
+        else:
+            try:
+                d = json.loads(row['data'])
+                if not d.get('is_admin'):
+                    d['is_admin'] = True
+                    conn.execute('UPDATE users SET data = ? WHERE username = ?', (json.dumps(d), 'Paramen42'))
+                    conn.commit()
+            except Exception:
+                pass
+        conn.close()
+    except Exception:
+        pass
+create_admin_if_not_exists()
  
 # Auto user creation removed to prevent test/default seeding
  
@@ -779,7 +834,9 @@ def login_page():
             return jsonify({"success": True})
         return redirect(url_for('game'))
     
-    return jsonify({"success": False, "message": "Hatalı kullanıcı adı veya şifre!"})
+    if request.is_json:
+        return jsonify({"success": False, "message": "Hatalı kullanıcı adı veya şifre!"})
+    return render_template('login.html', error="Hatalı kullanıcı adı veya şifre!")
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
