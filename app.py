@@ -13,11 +13,11 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "globalmarket_dev_secret")
+app.secret_key = "globalmarket_super_secret_key_123"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 app.config.update(
-    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SECURE=False,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax"
 )
@@ -766,6 +766,7 @@ def login_page():
                 conn2.close()
             except Exception:
                 pass
+        session.clear()
         session.permanent = True
         session['user_id'] = username
         session['username'] = username
@@ -773,6 +774,7 @@ def login_page():
             session['uid'] = uid
         # admin flag
         session['is_admin'] = bool(u.get('is_admin', False))
+        print("SESSION:", session)
         if request.is_json:
             return jsonify({"success": True})
         return redirect(url_for('game'))
