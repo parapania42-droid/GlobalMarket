@@ -36,7 +36,9 @@ function showMessage(msg, type = 'info') {
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
     
-    if (path === '/leaderboard') {
+    if (path === '/login') {
+        console.log('Login page - skip auth check');
+    } else if (path === '/leaderboard') {
         fetchLeaderboard();
         fetchUserData();
         setInterval(fetchUserData, 10000);
@@ -200,12 +202,16 @@ async function fetchUserData() {
     try {
         const res = await fetch(`/api/me`);
         if (res.status === 401) {
-            window.location.href = '/login';
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
             return;
         }
         if (res.status === 403) {
             alert("Hesabınız yasaklandı!");
-            window.location.href = '/login';
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
             return;
         }
         
