@@ -62,7 +62,7 @@ async function loadMarketplace() {
   const res = await fetch('/api/marketplace/list');
   const rows = await res.json();
   const list = document.getElementById('mp-list');
-  const me = '{{ session["username"] if session["username"] else "" }}';
+  const me = '{{ session.get("username", "") }}';
   list.innerHTML = rows.map(r => {
     const isMine = r.seller === me;
     return `

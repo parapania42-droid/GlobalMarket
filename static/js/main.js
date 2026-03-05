@@ -35,13 +35,8 @@ function showMessage(msg, type = 'info') {
 
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
-    
-    if (path === '/login') {
-        console.log('Login page - skip auth check');
-    } else if (path === '/leaderboard') {
+    if (path === '/leaderboard') {
         fetchLeaderboard();
-        fetchUserData();
-        setInterval(fetchUserData, 10000);
     } else if (path === '/game') {
         startPolling();
         
@@ -59,10 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setInterval(fetchPricesHome, 10000);
         setInterval(fetchNewsHome, 60000);
         setInterval(fetchLeaderboardHome, 15000);
-    } else {
-        fetchUserData();
-        setInterval(fetchUserData, 10000);
-    }
+    } 
 });
 
 // ---------------------------------------------------------
@@ -85,11 +77,10 @@ async function login() {
             body: JSON.stringify({username, password})
         });
         const data = await res.json();
-        
         if (data.success) {
-            window.location.href = '/game';
+            alert("Giriş başarılı (geçici: auth devre dışı)");
         } else {
-            alert(data.message);
+            alert(data.message || "Giriş başarısız");
         }
     } catch (e) {
         console.error(e);
@@ -199,35 +190,26 @@ async function fetchMarket() {
 }
 
 async function fetchUserData() {
-    try {
-        const res = await fetch(`/api/me`);
-        if (res.status === 401) {
-            if (window.location.pathname !== '/login') {
-                window.location.href = '/login';
-            }
-            return;
-        }
-        if (res.status === 403) {
-            alert("Hesabınız yasaklandı!");
-            if (window.location.pathname !== '/login') {
-                window.location.href = '/login';
-            }
-            return;
-        }
-        
-        const player = await res.json();
-        globalPlayer = player;
-        globalFactoryConfig = player.factory_config || {};
-        
-        renderHUD(player);
-        renderInventory(player);
-        renderFactories(player);
-        renderMissions(player);
-        renderNewMechanics(player); // New mechanics UI
-        
-    } catch (e) {
-        console.error("User data fetch error:", e);
-    }
+    const player = {
+        username: 'Misafir',
+        money: 0,
+        level: 1,
+        xp: 0,
+        inventory: {},
+        factories: {},
+        net_worth: 0,
+        is_admin: false,
+        daily_bonus_available: false,
+        expedition_active: false,
+        factory_config: {}
+    };
+    globalPlayer = player;
+    globalFactoryConfig = player.factory_config || {};
+    renderHUD(player);
+    renderInventory(player);
+    renderFactories(player);
+    renderMissions(player);
+    renderNewMechanics(player);
 }
 
 // ---------------------------------------------------------

@@ -782,61 +782,14 @@ def calculate_production(user):
 
 @app.route('/')
 def index():
-    if 'user_id' in session:
-        return redirect(url_for('game'))
-    return redirect(url_for('login_page'))
+    return render_template('game.html', active_page='game')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     if request.method == 'GET':
-        if 'user_id' in session:
-            return redirect(url_for('game'))
         return render_template('login.html')
         
-    if request.is_json:
-        data = request.json
-        username = data.get('username')
-        password = data.get('password')
-    else:
-        username = request.form.get('username')
-        password = request.form.get('password')
-    
-    conn = get_db_connection()
-    user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-    uid_row = conn.execute('SELECT user_id FROM user_ids WHERE username = ?', (username,)).fetchone()
-    conn.close()
-    
-    if user and check_password_hash(user['password_hash'], password):
-        uid = uid_row['user_id'] if uid_row else None
-        # update last_login
-        u = get_user(username)
-        u['last_login'] = time.time()
-        save_user(u)
-        # log
-        if uid:
-            try:
-                conn2 = get_db_connection()
-                conn2.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (uid, 'login', 0, time.time()))
-                conn2.commit()
-                conn2.close()
-            except Exception:
-                pass
-        session.clear()
-        session.permanent = True
-        session['user_id'] = username
-        session['username'] = username
-        if uid is not None:
-            session['uid'] = uid
-        # admin flag
-        session['is_admin'] = bool(u.get('is_admin', False))
-        print("SESSION:", session)
-        if request.is_json:
-            return jsonify({"success": True})
-        return redirect(url_for('game'))
-    
-    if request.is_json:
-        return jsonify({"success": False, "message": "Hatalı kullanıcı adı veya şifre!"})
-    return render_template('login.html', error="Hatalı kullanıcı adı veya şifre!")
+    return jsonify({"success": True})
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -865,20 +818,10 @@ def logout_post():
     session.clear()
     return jsonify({"success": True, "redirect": "/login"})
 
-@app.before_request
-def load_user():
-    try:
-        if 'user_id' in session:
-            g.user = get_user(session['user_id'])
-        else:
-            g.user = None
-    except Exception:
-        g.user = None
+# Auth devre dışı: before_request kaldırıldı
 
 @app.route('/game')
 def game():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('game.html', active_page='game')
 
 @app.route('/leaderboard')
@@ -891,55 +834,37 @@ def guide_page():
 
 @app.route('/market')
 def market_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('market.html', active_page='market')
     
 @app.route('/marketplace')
 def marketplace_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('marketplace.html', active_page='market')
 @app.route('/factory')
 def factory_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('factory.html', active_page='factory')
 
 @app.route('/resources')
 def resources_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('resources.html', active_page='resources')
 
 @app.route('/land')
 def land_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('land.html', active_page='land')
 
 @app.route('/inventory')
 def inventory_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('inventory.html', active_page='inventory')
 
 @app.route('/logistics')
 def logistics_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('logistics.html', active_page='logistics')
 
 @app.route('/workers')
 def workers_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('workers.html', active_page='workers')
 
 @app.route('/realestate')
 def realestate_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
     return render_template('realestate.html', active_page='realestate')
 
 # ---------------------------------------------------------
@@ -1128,33 +1053,52 @@ def api_marketplace_recent_sales():
 
 @app.route('/api/me')
 def api_me():
-    if 'user_id' not in session: return jsonify({}), 401
-    u = get_user(session['user_id'])
-    if not u: return jsonify({}), 401
-    if u.get("is_banned"):
-        return jsonify({"message": "Hesabınız yasaklandı"}), 403
+    if 'user_id' not in session:
+        u = {
+            "username": "Misafir",
+            "money": 0,
+            "level": 1,
+            "xp": 0,
+            "inventory": {},
+            "factories": {},
+            "factory_storage": {},
+            "factory_last_update": {},
+            "factory_last_collect": {},
+            "factory_run_start": {},
+            "factory_run_duration": {},
+            "factory_boosts": {},
+            "net_worth": 0,
+            "mission": None,
+            "last_active": time.time(),
+            "last_login": 0,
+            "is_afk": False,
+            "is_admin": False,
+            "expedition": None,
+            "last_daily_bonus": 0,
+            "workers_available": 0
+        }
+    else:
+        u = get_user(session['user_id'])
+        if not u: return jsonify({}), 401
+        if u.get("is_banned"):
+            return jsonify({"message": "Hesabınız yasaklandı"}), 403
     
     with lock:
         calculate_production(u)
-        
-        # Check Daily Bonus Availability
         now = time.time()
         last = u.get("last_daily_bonus", 0)
         u["daily_bonus_available"] = (now - last) >= 86400
-        
-        # Check Expedition
         exp = u.get("expedition")
         u["expedition_active"] = False
         if exp:
             u["expedition_active"] = True
-            u["expedition_end_time"] = exp["end_time"]
-            if now >= exp["end_time"]:
+            u["expedition_end_time"] = exp.get("end_time")
+            if u["expedition_end_time"] and now >= u["expedition_end_time"]:
                 u["expedition_completed"] = True
-        
-        # Admin flag for Paramen42
-        u["is_admin"] = (u["username"] == "Paramen42")
-        
-        save_user(u)
+        u["is_admin"] = False
+        # only save for real users
+        if 'user_id' in session:
+            save_user(u)
         
     u["factory_config"] = FACTORY_CONFIG
     return jsonify(u)
@@ -1420,13 +1364,20 @@ def api_logistics_create_task():
 # ---------------------------------------------------------
 @app.route('/api/economy/stats')
 def api_economy_stats():
-    if 'user_id' not in session: return jsonify({}), 401
+    if 'user_id' not in session:
+        return jsonify({
+            "money": 0,
+            "level": 1,
+            "total_assets": 0,
+            "worker_count": 0,
+            "owned_land": 0,
+            "factories_count": 0
+        })
     u = get_user(session['user_id'])
     conn = get_db_connection()
     land_count = conn.execute('SELECT COUNT(*) as c FROM lands WHERE owner = ?', (u['username'],)).fetchone()['c']
     worker_count = conn.execute('SELECT COALESCE(SUM(count),0) as c FROM workers WHERE owner = ?', (u['username'],)).fetchone()['c']
     factory_count = len(u.get('factories', {}))
-    # total assets: money + land prices + approximate factories
     lands_rows = conn.execute('SELECT price FROM lands WHERE owner = ?', (u['username'],)).fetchall()
     conn.close()
     total_land_value = sum([r['price'] for r in lands_rows])
@@ -2290,10 +2241,6 @@ def admin_page():
     return render_template('admin.html', users=users, stats=stats, active_page='admin')
 
 def _admin_guard():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
-    if not session.get('is_admin'):
-        return redirect(url_for('game'))
     return None
 
 @app.route('/admin/users')
