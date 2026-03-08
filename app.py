@@ -91,7 +91,12 @@ def _ensure_engine():
         app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
         _USE_PG = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 10, "max_overflow": 20, "pool_pre_ping": True, "pool_recycle": 280}
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        "pool_size": 5,
+        "max_overflow": 0,
+        "pool_recycle": 60,
+        "pool_pre_ping": True
+    }
     db.init_app(app)
     from flask import current_app
     with app.app_context():
@@ -1545,6 +1550,7 @@ def api_factory_list():
             rows.append({
                 "type": fid,
                 "name": conf['name'],
+                "product_type": conf.get('type'),
                 "level": 0,
                 "running": False,
                 "rate_per_hour": 0,
@@ -1593,6 +1599,7 @@ def api_factory_list():
         rows.append({
             "type": fid,
             "name": FACTORY_CONFIG[fid]['name'],
+            "product_type": FACTORY_CONFIG[fid].get('type'),
             "level": lvl,
             "running": running,
             "rate_per_hour": rate_per_hour,
@@ -2022,6 +2029,7 @@ def api_factories():
             rows.append({
                 "type": fid,
                 "name": conf['name'],
+                "product_type": conf.get('type'),
                 "level": 0,
                 "running": False,
                 "rate_per_hour": 0,
