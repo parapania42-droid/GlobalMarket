@@ -77,31 +77,12 @@ def _ensure_engine():
     db_url = os.environ.get("DATABASE_URL", "").strip()
     if db_url:
         norm = _normalize_db_url(db_url)
-        try:
-            parsed = urlparse(norm)
-            host = parsed.hostname or "unknown-host"
-            dbname = (parsed.path or "").lstrip("/") or "unknown-db"
-            print(f"[DB] DATABASE_URL detected. Using PostgreSQL via SQLAlchemy -> host={host}, db={dbname}")
-        except Exception:
-            print("[DB] DATABASE_URL detected. Using PostgreSQL via SQLAlchemy")
         _USE_PG = True
-        _DB_ENGINE = create_engine(norm, pool_pre_ping=True)
-        try:
-            with _DB_ENGINE.connect() as conn:
-                conn.execute(text("SELECT 1"))
-        except Exception as e:
-            print(f"[DB] Failed to connect to PostgreSQL using DATABASE_URL: {e}")
-            raise
+        _DB_ENGINE = create_engine(norm)
     else:
-        render_env = os.environ.get("RENDER", "") or os.environ.get("RENDER_SERVICE_ID", "") or os.environ.get("RENDER_SERVICE_NAME", "")
-        if render_env:
-            print("[DB][WARN] DATABASE_URL not set on Render. Using SQLite fallback for now; set DATABASE_URL to enable PostgreSQL.")
-        else:
-            print("[DB][WARN] DATABASE_URL not set. Using local SQLite fallback.")
         _USE_PG = False
         base_dir = os.path.abspath(os.path.dirname(__file__))
         db_path = os.path.join(base_dir, "globalmarket.db")
-        print(f"[DB] SQLite path: {db_path}")
         _DB_ENGINE = create_engine(f"sqlite:///{db_path}")
 
 class _DictRow:
