@@ -11,7 +11,8 @@ import shutil
 from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from flask_sqlalchemy import SQLAlchemy
 import re
 from urllib.parse import urlparse
 
@@ -64,6 +65,7 @@ FACTORY_CONFIG = {
 
 _DB_ENGINE = None
 _USE_PG = False
+db = SQLAlchemy()
 
 def _normalize_db_url(url: str) -> str:
     if url.startswith("postgres://"):
@@ -77,13 +79,18 @@ def _ensure_engine():
     db_url = os.environ.get("DATABASE_URL", "").strip()
     if db_url:
         norm = _normalize_db_url(db_url)
+        app.config['SQLALCHEMY_DATABASE_URI'] = norm
         _USE_PG = True
-        _DB_ENGINE = create_engine(norm)
     else:
-        _USE_PG = False
         base_dir = os.path.abspath(os.path.dirname(__file__))
         db_path = os.path.join(base_dir, "globalmarket.db")
-        _DB_ENGINE = create_engine(f"sqlite:///{db_path}")
+        app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
+        _USE_PG = False
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    db.init_app(app)
+    from flask import current_app
+    with app.app_context():
+        _DB_ENGINE = db.engine
 
 class _DictRow:
     def __init__(self, mapping):
