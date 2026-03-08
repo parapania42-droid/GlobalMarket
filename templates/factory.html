@@ -13,17 +13,20 @@
 
 <script>
 async function loadFactories() {
-    // Use new endpoint; fallback to old if needed
-    let res = await fetch('/api/factory/list');
-    if (!res.ok) {
-      res = await fetch('/api/factories');
-    }
-    if (!res.ok) return;
-    const data = await res.json();
+    let data = [];
+    try {
+      let res = await fetch('/api/factory/list');
+      if (!res.ok) res = await fetch('/api/factories');
+      if (res.ok) data = await res.json();
+    } catch (e) {}
     const list = document.getElementById('factory-list');
-    if (!data.length) {
-        list.innerHTML = '<div class="hint-text">Fabrikanız yok veya veriler yüklenemedi.</div>';
-        return;
+    if (!data || !data.length) {
+      list.innerHTML = `
+        <div style="padding:12px; border:1px dashed var(--border); border-radius:8px; margin-bottom:12px; text-align:center;">
+          <div style="margin-bottom:10px;">Henüz fabrikanız yok.</div>
+          <button class="btn btn-primary">Fabrika Satın Al</button>
+        </div>`;
+      return;
     }
     // If user has no factories (all level 0), show build cards
     const hasAny = data.some(f => (f.level || 0) > 0);
@@ -80,6 +83,9 @@ async function loadFactories() {
           <button class="btn btn-secondary btn-sm" onclick="assignWorkers('${f.type}')">İşçi Ekle</button>
           <button class="btn btn-secondary btn-sm" onclick="unassignWorkers('${f.type}')">İşçi Çıkar</button>
         </div>
+          <div style="font-size:0.9em; color:var(--text-muted); margin-top:6px;">
+            Hız: ${f.rate_per_hour || 0}/saat • Kapasite: ${f.worker_capacity || 0} işçi • Günlük: ${new Intl.NumberFormat('tr-TR').format(f.daily_income || 0)} TL
+          </div>
       </div>
     `).join('');
     // Per-second countdown update

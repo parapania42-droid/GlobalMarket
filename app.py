@@ -1682,7 +1682,8 @@ def api_resources():
 
 @app.route('/api/inventory')
 def api_inventory():
-    if 'user_id' not in session: return jsonify([]), 401
+    if 'user_id' not in session:
+        return jsonify({"items": [], "total_value": 0})
     u = get_user(session['user_id'])
     conn = get_db_connection()
     rows = conn.execute('SELECT item, price FROM prices').fetchall()
@@ -1984,7 +1985,26 @@ def upgrade_factory(fid):
 
 @app.route('/api/factories')
 def api_factories():
-    if 'user_id' not in session: return jsonify([]), 401
+    if 'user_id' not in session:
+        rows = []
+        for fid, conf in FACTORY_CONFIG.items():
+            rows.append({
+                "type": fid,
+                "name": conf['name'],
+                "level": 0,
+                "running": False,
+                "rate_per_hour": 0,
+                "worker_count": 0,
+                "worker_capacity": conf.get('worker_capacity', 0),
+                "bonus_pct": 0,
+                "production_interval_hours": 3,
+                "last_collect_hours_ago": 0,
+                "production_duration_minutes": None,
+                "remaining_seconds": None,
+                "collectable": False,
+                "daily_income": 0
+            })
+        return jsonify(rows)
     u = get_user(session['user_id'])
     conn = get_db_connection()
     rows = []

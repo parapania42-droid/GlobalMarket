@@ -26,13 +26,12 @@ function catOf(name) {
 
 async function loadInventory() {
   try {
-    // Use new guest-friendly endpoint; fallback to old one
-    let res = await fetch('/api/inventory/get');
-    if (!res.ok) {
-      res = await fetch('/api/inventory');
-    }
-    if (!res.ok) return;
-    const data = await res.json();
+    let data = { items: [], total_value: 0 };
+    try {
+      let res = await fetch('/api/inventory/get');
+      if (!res.ok) res = await fetch('/api/inventory');
+      if (res.ok) data = await res.json();
+    } catch (e) {}
     const total = document.getElementById('inventory-total');
     const cards = document.getElementById('inventory-cards');
     const items = (data.items || []).slice().sort((a,b)=>a.name.localeCompare(b.name));
