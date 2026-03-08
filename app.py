@@ -16,6 +16,8 @@ from flask_sqlalchemy import SQLAlchemy
 import re
 from urllib.parse import urlparse
 
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
 app = Flask(__name__)
 app.secret_key = "globalmarket_fixed_secret_key"
 app.config["SESSION_PERMANENT"] = True
@@ -80,7 +82,7 @@ def _ensure_engine():
     global _DB_ENGINE, _USE_PG
     if _DB_ENGINE is not None:
         return
-    db_url = os.environ.get("DATABASE_URL", "").strip()
+    db_url = DATABASE_URL
     if db_url:
         norm = _normalize_db_url(db_url)
         app.config['SQLALCHEMY_DATABASE_URI'] = norm
@@ -91,12 +93,7 @@ def _ensure_engine():
         app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
         _USE_PG = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        "pool_size": 5,
-        "max_overflow": 0,
-        "pool_recycle": 60,
-        "pool_pre_ping": True
-    }
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 2, "max_overflow": 0, "pool_pre_ping": True, "pool_recycle": 60}
     db.init_app(app)
     from flask import current_app
     with app.app_context():
