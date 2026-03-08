@@ -91,7 +91,7 @@ def _ensure_engine():
         app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
         _USE_PG = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 10, "max_overflow": 20, "pool_pre_ping": True}
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 10, "max_overflow": 20, "pool_pre_ping": True, "pool_recycle": 280}
     db.init_app(app)
     from flask import current_app
     with app.app_context():
@@ -101,6 +101,13 @@ def _ensure_engine():
 def shutdown_session(exception=None):
     try:
         db.session.remove()
+    except Exception:
+        pass
+
+@app.teardown_request
+def _shutdown_request_session(exception=None):
+    try:
+        db.session.close()
     except Exception:
         pass
 
@@ -152,6 +159,7 @@ class _SAConnection:
     def __init__(self, engine):
         self._conn = engine.connect()
         self._trans = None
+        self._closed = False
     def cursor(self):
         return self
     def execute(self, sql, params=()):
@@ -174,6 +182,17 @@ class _SAConnection:
     def close(self):
         try:
             self._conn.close()
+            self._closed = True
+        except Exception:
+            pass
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+    def __del__(self):
+        try:
+            if not getattr(self, "_closed", True):
+                self._conn.close()
         except Exception:
             pass
 
