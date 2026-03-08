@@ -64,6 +64,7 @@ async function loadFactories() {
         <div style="display:grid; grid-template-columns: repeat(2,1fr); gap:5px; margin-top:5px;">
           <div>Üretim (saatlik): <strong id="rate-${f.type}">${f.rate_per_hour}</strong></div>
           <div>İşçi: <strong>${f.worker_count}</strong> / Kapasite: <strong>${f.worker_capacity}</strong></div>
+          <div>Verimlilik: <strong>${(f.worker_capacity ? Math.round((f.worker_count/f.worker_capacity)*100) : 0)}%</strong></div>
           <div>Günlük Gelir: <strong id="daily-${f.type}">${f.daily_income} TL</strong></div>
           <div>Durum: <strong>${f.running ? 'Çalışıyor' : 'Durduruldu'}</strong></div>
           <div>Üretim süresi: <strong>${f.production_duration_minutes || '-'} dk</strong></div>

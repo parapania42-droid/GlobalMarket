@@ -1,19 +1,19 @@
 :root {
-    --bg-dark: #0f1115;
-    --bg-card: #161a22;
-    --text-main: #e6e9ef;
-    --text-muted: #9aa4b2;
-    --primary: #6c8cff;
-    --primary-hover: #5577ff;
-    --secondary: #00c2a8;
-    --success: #22c55e;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-    --info: #38bdf8;
+    --bg-dark: #1a1a1a;
+    --bg-card: #202020;
+    --text-main: #e9f0ea;
+    --text-muted: #9aa4a0;
+    --primary: #00ff88;
+    --primary-hover: #00e67b;
+    --secondary: #00ff88;
+    --success: #00ff88;
+    --danger: #ff4d4d;
+    --warning: #ffb020;
+    --info: #33d4ff;
     --rare: #a78bfa;
     --epic: #fb7185;
     --legendary: #fde047;
-    --border: #1f2937;
+    --border: #2a2a2a;
 }
 
 html { font-size: 17px; }
@@ -277,7 +277,7 @@ body {
 
 /* --- FACTORIES --- */
 .factory-card {
-    background: linear-gradient( to bottom right, #182033 0%, #141925 100%);
+    background: linear-gradient( to bottom right, #222 0%, #1b1b1b 100%);
     padding: 14px;
     margin-bottom: 12px;
     border-radius: 12px;
@@ -293,7 +293,7 @@ body {
 }
 
 .card {
-    background: linear-gradient( to bottom right, #161b26 0%, #121722 100%);
+    background: linear-gradient( to bottom right, #232323 0%, #1c1c1c 100%);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 14px;
     box-shadow: 0 12px 24px rgba(0,0,0,0.35);
@@ -569,8 +569,8 @@ body {
 }
 
 .form-input {
-    background: #1b2230;
-    border: 1px solid #2b3344;
+    background: #242424;
+    border: 1px solid #333;
     color: white;
     padding: 8px;
     border-radius: 8px;

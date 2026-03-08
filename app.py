@@ -91,10 +91,18 @@ def _ensure_engine():
         app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
         _USE_PG = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 10, "max_overflow": 20, "pool_pre_ping": True}
     db.init_app(app)
     from flask import current_app
     with app.app_context():
         _DB_ENGINE = db.engine
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    try:
+        db.session.remove()
+    except Exception:
+        pass
 
 class _DictRow:
     def __init__(self, mapping):
