@@ -34,20 +34,24 @@ lock = threading.Lock()
 # ---------------------------------------------------------
 
 FACTORY_CONFIG = {
-    "wood": {"name": "Odun Fabrikası", "cost": 100, "rate": 10, "capacity": 100, "unlock_lvl": 1, "type": "Odun", "worker_capacity": 5},
-    "stone": {"name": "Taş Ocağı", "cost": 500, "rate": 5, "capacity": 50, "unlock_lvl": 2, "type": "Taş", "worker_capacity": 5},
-    "iron": {"name": "Demir Madeni", "cost": 2000, "rate": 3, "capacity": 30, "unlock_lvl": 3, "type": "Demir", "worker_capacity": 15},
+    "wood": {"name": "Odun Fabrikası", "cost": 100, "rate": 10, "capacity": 100, "unlock_lvl": 1, "type": "Odun", "worker_capacity": 5, "duration_min": 30},
+    "stone": {"name": "Taş Ocağı", "cost": 500, "rate": 5, "capacity": 50, "unlock_lvl": 2, "type": "Taş", "worker_capacity": 5, "duration_min": 60},
+    "iron": {"name": "Demir Madeni", "cost": 2000, "rate": 3, "capacity": 30, "unlock_lvl": 3, "type": "Demir", "worker_capacity": 15, "duration_min": 90},
     "coal": {"name": "Kömür Madeni", "cost": 1500, "rate": 4, "capacity": 40, "unlock_lvl": 3, "type": "Kömür", "worker_capacity": 15},
-    "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik", "worker_capacity": 30},
-    "plastic": {"name": "Plastik Fabrikası", "cost": 500000, "rate": 1.5, "capacity": 20, "unlock_lvl": 25, "type": "Plastik", "worker_capacity": 30},
-    "electronics": {"name": "Elektronik Fabrikası", "cost": 1000000, "rate": 0.8, "capacity": 10, "unlock_lvl": 30, "type": "Elektronik", "worker_capacity": 30}
+    "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik", "worker_capacity": 30, "duration_min": 120},
+    "plastic": {"name": "Plastik Fabrikası", "cost": 500000, "rate": 1.5, "capacity": 20, "unlock_lvl": 25, "type": "Plastik", "worker_capacity": 30, "duration_min": 75},
+    "electronics": {"name": "Elektronik Fabrikası", "cost": 1000000, "rate": 0.8, "capacity": 10, "unlock_lvl": 30, "type": "Elektronik", "worker_capacity": 30, "duration_min": 180},
+    "textile": {"name": "Tekstil Fabrikası", "cost": 80000, "rate": 6, "capacity": 80, "unlock_lvl": 8, "type": "Tekstil", "worker_capacity": 12, "duration_min": 45},
+    "food": {"name": "Gıda Fabrikası", "cost": 120000, "rate": 8, "capacity": 90, "unlock_lvl": 10, "type": "Gıda", "worker_capacity": 14, "duration_min": 60},
+    "automotive": {"name": "Otomotiv Fabrikası", "cost": 2000000, "rate": 0.7, "capacity": 12, "unlock_lvl": 28, "type": "Otomotiv", "worker_capacity": 28, "duration_min": 240},
+    "heavy_industry": {"name": "Ağır Sanayi", "cost": 3500000, "rate": 0.5, "capacity": 10, "unlock_lvl": 32, "type": "Ağır Sanayi", "worker_capacity": 35, "duration_min": 360}
     ,
     # Orta Seviye
-    "glass": {"name": "Cam Fabrikası", "cost": 750000, "rate": 1.2, "capacity": 25, "unlock_lvl": 22, "type": "Cam", "worker_capacity": 20},
-    "chem": {"name": "Kimya Fabrikası", "cost": 900000, "rate": 1.4, "capacity": 25, "unlock_lvl": 24, "type": "Kimyasal", "worker_capacity": 25},
+    "glass": {"name": "Cam Fabrikası", "cost": 750000, "rate": 1.2, "capacity": 25, "unlock_lvl": 22, "type": "Cam", "worker_capacity": 20, "duration_min": 100},
+    "chem": {"name": "Kimya Fabrikası", "cost": 900000, "rate": 1.4, "capacity": 25, "unlock_lvl": 24, "type": "Kimyasal", "worker_capacity": 25, "duration_min": 110},
     # Yüksek Seviye
-    "chip": {"name": "Çip Fabrikası", "cost": 2500000, "rate": 0.6, "capacity": 12, "unlock_lvl": 35, "type": "Çip", "worker_capacity": 30},
-    "battery": {"name": "Batarya Fabrikası", "cost": 3000000, "rate": 0.7, "capacity": 15, "unlock_lvl": 38, "type": "Batarya", "worker_capacity": 30},
+    "chip": {"name": "Çip Fabrikası", "cost": 2500000, "rate": 0.6, "capacity": 12, "unlock_lvl": 35, "type": "Çip", "worker_capacity": 30, "duration_min": 300},
+    "battery": {"name": "Batarya Fabrikası", "cost": 3000000, "rate": 0.7, "capacity": 15, "unlock_lvl": 38, "type": "Batarya", "worker_capacity": 30, "duration_min": 200},
     # Premium Seviye
     "car": {"name": "Otomobil Fabrikası", "cost": 10000000, "rate": 0.4, "capacity": 8, "unlock_lvl": 45, "type": "Otomobil", "worker_capacity": 35},
     "smartphone": {"name": "Akıllı Telefon Fabrikası", "cost": 15000000, "rate": 0.5, "capacity": 10, "unlock_lvl": 48, "type": "Akıllı Telefon", "worker_capacity": 35},
@@ -2068,7 +2072,9 @@ def api_factory_start():
         u['factory_running'] = fr
         # start production run countdown
         lvl = u.get('factories', {}).get(fid, 1)
-        duration_min = max(2, 10 - 2 * (int(lvl) - 1))
+        conf = FACTORY_CONFIG.get(fid, {})
+        base_dur = conf.get('duration_min')
+        duration_min = base_dur if base_dur else max(2, 10 - 2 * (int(lvl) - 1))
         u.setdefault('factory_run_start', {})[fid] = time.time()
         u.setdefault('factory_run_duration', {})[fid] = duration_min
         save_user(u)

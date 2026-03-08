@@ -72,6 +72,9 @@ async function loadFactories() {
           <div>Kalan süre: <strong id="remain-${f.type}">${(f.collectable ? 'Toplanabilir' : formatRemain(f.remaining_seconds))}</strong></div>
           <div>Sonraki seviye maliyet: <strong id="cost-${f.type}">-</strong></div>
         </div>
+        <div class="progress-bg" style="margin-top:6px;">
+          <div class="progress-fill" id="pbar-${f.type}" style="width:0%"></div>
+        </div>
         <div style="display:flex; gap:5px; margin-top:8px;">
           <button class="btn btn-success btn-sm" onclick="factoryStart('${f.type}')">Üretimi Başlat</button>
           <button class="btn btn-warning btn-sm" onclick="factoryStop('${f.type}')">Üretimi Durdur</button>
@@ -91,13 +94,19 @@ async function loadFactories() {
     // Per-second countdown update
     data.forEach(f => {
       const el = document.getElementById('remain-'+f.type);
+      const bar = document.getElementById('pbar-'+f.type);
       if (!el) return;
       if (typeof f.remaining_seconds !== 'number' || f.remaining_seconds === null) return;
+      const total = (f.production_duration_minutes || 0) * 60 * 1000;
       const endMs = Date.now() + f.remaining_seconds * 1000;
       const update = () => {
         const left = Math.max(0, endMs - Date.now());
         const s = Math.floor(left / 1000);
         el.textContent = s <= 0 ? 'Toplanabilir' : formatRemain(s);
+        if (bar && total > 0) {
+          const pct = Math.min(100, Math.max(0, 100 * (1 - left / total)));
+          bar.style.width = pct + '%';
+        }
         if (s > 0) requestAnimationFrame(update);
       };
       update();
