@@ -12,6 +12,8 @@ from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, text
+import re
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 app.secret_key = "globalmarket_fixed_secret_key"
@@ -74,13 +76,28 @@ def _ensure_engine():
         return
     db_url = os.environ.get("DATABASE_URL", "").strip()
     if db_url:
+        norm = _normalize_db_url(db_url)
+        try:
+            parsed = urlparse(norm)
+            host = parsed.hostname or "unknown-host"
+            dbname = (parsed.path or "").lstrip("/") or "unknown-db"
+            print(f"[DB] DATABASE_URL detected. Using PostgreSQL via SQLAlchemy -> host={host}, db={dbname}")
+        except Exception:
+            print("[DB] DATABASE_URL detected. Using PostgreSQL via SQLAlchemy")
         _USE_PG = True
-        _DB_ENGINE = create_engine(_normalize_db_url(db_url), pool_pre_ping=True, future=True)
+        _DB_ENGINE = create_engine(norm, pool_pre_ping=True, future=True)
+        try:
+            with _DB_ENGINE.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception as e:
+            print(f"[DB] Failed to connect to PostgreSQL using DATABASE_URL: {e}")
+            raise
     else:
         _USE_PG = False
         # Fallback to SQLite file for local/dev use
         base_dir = os.path.abspath(os.path.dirname(__file__))
         db_path = os.path.join(base_dir, "globalmarket.db")
+        print(f"[DB] DATABASE_URL not set. Using local SQLite file at {db_path}")
         _DB_ENGINE = create_engine(f"sqlite:///{db_path}", future=True)
 
 class _DictRow:
