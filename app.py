@@ -85,7 +85,7 @@ def _ensure_engine():
         except Exception:
             print("[DB] DATABASE_URL detected. Using PostgreSQL via SQLAlchemy")
         _USE_PG = True
-        _DB_ENGINE = create_engine(norm, pool_pre_ping=True, future=True)
+        _DB_ENGINE = create_engine(norm, pool_pre_ping=True)
         try:
             with _DB_ENGINE.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -102,7 +102,7 @@ def _ensure_engine():
         base_dir = os.path.abspath(os.path.dirname(__file__))
         db_path = os.path.join(base_dir, "globalmarket.db")
         print(f"[DB] SQLite path: {db_path}")
-        _DB_ENGINE = create_engine(f"sqlite:///{db_path}", future=True)
+        _DB_ENGINE = create_engine(f"sqlite:///{db_path}")
 
 class _DictRow:
     def __init__(self, mapping):
@@ -116,7 +116,7 @@ class _DictRow:
     def items(self):
         return self._d.items()
     def __iter__(self):
-        return iter(self._d.items())
+        return iter(self._d)
     def __len__(self):
         return len(self._d)
 
