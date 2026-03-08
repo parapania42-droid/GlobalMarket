@@ -11,6 +11,7 @@ import shutil
 from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import create_engine, text
 
 app = Flask(__name__)
 app.secret_key = "globalmarket_fixed_secret_key"
@@ -59,12 +60,109 @@ FACTORY_CONFIG = {
 # DATABASE
 # ---------------------------------------------------------
 
+_DB_ENGINE = None
+_USE_PG = False
+
+def _normalize_db_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    return url
+
+def _ensure_engine():
+    global _DB_ENGINE, _USE_PG
+    if _DB_ENGINE is not None:
+        return
+    db_url = os.environ.get("DATABASE_URL", "").strip()
+    if db_url:
+        _USE_PG = True
+        _DB_ENGINE = create_engine(_normalize_db_url(db_url), pool_pre_ping=True, future=True)
+    else:
+        _USE_PG = False
+        # Fallback to SQLite file for local/dev use
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        db_path = os.path.join(base_dir, "globalmarket.db")
+        _DB_ENGINE = create_engine(f"sqlite:///{db_path}", future=True)
+
+class _DictRow:
+    def __init__(self, mapping):
+        self._d = dict(mapping)
+    def __getitem__(self, k):
+        return self._d[k]
+    def get(self, k, default=None):
+        return self._d.get(k, default)
+    def keys(self):
+        return self._d.keys()
+    def items(self):
+        return self._d.items()
+    def __iter__(self):
+        return iter(self._d.items())
+    def __len__(self):
+        return len(self._d)
+
+class _SAResultWrapper:
+    def __init__(self, result):
+        rows = result.fetchall()
+        self._rows = []
+        for r in rows:
+            mapping = getattr(r, "_mapping", None)
+            self._rows.append(_DictRow(mapping if mapping is not None else dict(r)))
+    def fetchall(self):
+        return list(self._rows)
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+def _convert_qmarks(sql: str, params):
+    if not params:
+        return sql, {}
+    out = []
+    bind = {}
+    idx = 0
+    for ch in sql:
+        if ch == '?':
+            key = f"p{idx}"
+            out.append(f":{key}")
+            bind[key] = params[idx]
+            idx += 1
+        else:
+            out.append(ch)
+    return "".join(out), bind
+
+class _SAConnection:
+    def __init__(self, engine):
+        self._conn = engine.connect()
+        self._trans = None
+    def cursor(self):
+        return self
+    def execute(self, sql, params=()):
+        if isinstance(params, (list, tuple)):
+            sql_conv, bind = _convert_qmarks(sql, params)
+        elif isinstance(params, dict):
+            sql_conv, bind = sql, params
+        else:
+            sql_conv, bind = sql, {}
+        res = self._conn.execute(text(sql_conv), bind)
+        try:
+            return _SAResultWrapper(res)
+        except Exception:
+            return _SAResultWrapper(res)
+    def commit(self):
+        try:
+            self._conn.commit()
+        except Exception:
+            pass
+    def close(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
 def get_db_connection():
-    base_dir = os.path.abspath(os.path.dirname(__file__))
-    db_path = os.path.join(base_dir, "globalmarket.db")
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    _ensure_engine()
+    if not _USE_PG:
+        # Provide sqlite3-compatible connection when using SQLite via SQLAlchemy
+        # so row usage remains consistent
+        return _SAConnection(_DB_ENGINE)
+    return _SAConnection(_DB_ENGINE)
 
 def _repo_cfg():
     repo = os.environ.get("GITHUB_REPO", "").strip()
