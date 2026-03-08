@@ -13,7 +13,11 @@
 
 <script>
 async function loadFactories() {
-    const res = await fetch('/api/factories');
+    // Use new endpoint; fallback to old if needed
+    let res = await fetch('/api/factory/list');
+    if (!res.ok) {
+      res = await fetch('/api/factories');
+    }
     if (!res.ok) return;
     const data = await res.json();
     const list = document.getElementById('factory-list');
@@ -21,7 +25,28 @@ async function loadFactories() {
         list.innerHTML = '<div class="hint-text">Fabrikanız yok veya veriler yüklenemedi.</div>';
         return;
     }
-    list.innerHTML = `
+    // If user has no factories (all level 0), show build cards
+    const hasAny = data.some(f => (f.level || 0) > 0);
+    let headerHtml = '';
+    if (!hasAny) {
+      headerHtml = `
+        <div style="padding:12px; border:1px dashed var(--border); border-radius:8px; margin-bottom:12px; text-align:center;">
+          <div style="margin-bottom:10px;">Henüz fabrikanız yok.</div>
+          <button class="btn btn-primary" onclick="alert('Mağaza entegrasyonu devredeğil')">İlk Fabrikanızı Kurun</button>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-bottom:12px;">
+          ${data.map(f => `
+            <div class="card" style="padding:12px;">
+              <div style="font-weight:bold; margin-bottom:6px;">${f.name}</div>
+              <div style="font-size:0.9em; color:var(--text-muted)">Maliyet: ${new Intl.NumberFormat('tr-TR').format(f.build_cost || 0)} TL</div>
+              <div style="font-size:0.9em; color:var(--text-muted)">Kapasite: ${f.worker_capacity || 0} işçi</div>
+              <button class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="alert('Satın alma yakında')">Kur</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    list.innerHTML = headerHtml + `
       <div style="display:flex; gap:8px; margin-bottom:12px;">
         <input id="buy-workers-count" type="number" class="form-input" placeholder="Adet">
         <button class="btn btn-primary btn-sm" onclick="buyWorkers()">İşçi Satın Al (500 TL)</button>

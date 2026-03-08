@@ -8,42 +8,56 @@
       <div class="hint-text">Ürünlerinizin miktarı ve tahmini piyasa değeri.</div>
     </div>
     <div id="inventory-total" class="net-worth">Toplam Değer: 0 TL</div>
-    <table style="width:100%; border-collapse: collapse;">
-      <thead>
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border)">Ürün</th>
-          <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border)">Miktar</th>
-          <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border)">Fiyat</th>
-          <th style="text-align:right; padding:8px; border-bottom:1px solid var(--border)">Değer</th>
-        </tr>
-      </thead>
-      <tbody id="inventory-body"></tbody>
-    </table>
+
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button id="tab-raw" class="btn btn-sm btn-secondary">Hammaddeler</button>
+      <button id="tab-finished" class="btn btn-sm btn-secondary">Bitmiş Ürünler</button>
+    </div>
+
+    <div id="inventory-cards" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px;"></div>
   </div>
 </div>
 
 <script>
+function catOf(name) {
+  const raws = ['Odun','Taş','Demir','Altın','Elmas','Petrol','Buğday','Kömür'];
+  return raws.includes(name) ? 'raw' : 'finished';
+}
+
 async function loadInventory() {
   try {
-    const res = await fetch('/api/inventory');
+    // Use new guest-friendly endpoint; fallback to old one
+    let res = await fetch('/api/inventory/get');
+    if (!res.ok) {
+      res = await fetch('/api/inventory');
+    }
     if (!res.ok) return;
     const data = await res.json();
-    const tbody = document.getElementById('inventory-body');
     const total = document.getElementById('inventory-total');
-    if (!data.items || data.items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:10px; color:var(--text-muted)">Envanter boş.</td></tr>';
-      total.textContent = 'Toplam Değer: 0 TL';
-      return;
-    }
-    tbody.innerHTML = data.items.map(it => `
-      <tr>
-        <td style="padding:8px">${it.name}</td>
-        <td style="padding:8px; text-align:right">${it.qty}</td>
-        <td style="padding:8px; text-align:right">${it.price} TL</td>
-        <td style="padding:8px; text-align:right; color:var(--success)">${it.value} TL</td>
-      </tr>
-    `).join('');
-    total.textContent = 'Toplam Değer: ' + data.total_value + ' TL';
+    const cards = document.getElementById('inventory-cards');
+    const items = (data.items || []).slice().sort((a,b)=>a.name.localeCompare(b.name));
+    const render = (which) => {
+      const list = items.filter(it => catOf(it.name) === which);
+      if (list.length === 0) {
+        cards.innerHTML = '<div class="hint-text" style="grid-column: 1 / -1">Bu kategoride ürün yok.</div>';
+        return;
+      }
+      cards.innerHTML = list.map(it => `
+        <div class="card" style="padding:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight:bold">${it.name}</div>
+            <div style="color:var(--success)">${new Intl.NumberFormat('tr-TR').format(it.price)} TL</div>
+          </div>
+          <div style="font-size:0.9em; color:var(--text-muted); margin:6px 0;">Miktar: ${it.qty}</div>
+          <div style="font-weight:bold; color:var(--success)">Değer: ${new Intl.NumberFormat('tr-TR').format(it.value)} TL</div>
+          <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="alert('Markette sat fonksiyonu yakında')">Markette Sat</button>
+        </div>
+      `).join('');
+    };
+    total.textContent = 'Toplam Değer: ' + new Intl.NumberFormat('tr-TR').format(data.total_value || 0) + ' TL';
+    document.getElementById('tab-raw').onclick = () => render('raw');
+    document.getElementById('tab-finished').onclick = () => render('finished');
+    render('raw');
   } catch (e) {}
 }
 document.addEventListener('DOMContentLoaded', loadInventory);

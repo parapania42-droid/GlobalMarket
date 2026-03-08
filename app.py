@@ -1512,6 +1512,115 @@ def api_economy_stats():
     })
 
 # ---------------------------------------------------------
+# NEW API: FACTORY LIST (guest-friendly)
+# ---------------------------------------------------------
+@app.route('/api/factory/list')
+def api_factory_list():
+    if 'user_id' not in session:
+        rows = []
+        for fid, conf in FACTORY_CONFIG.items():
+            rows.append({
+                "type": fid,
+                "name": conf['name'],
+                "level": 0,
+                "running": False,
+                "rate_per_hour": 0,
+                "worker_count": 0,
+                "worker_capacity": conf.get('worker_capacity', 0),
+                "bonus_pct": 0,
+                "production_interval_hours": 3,
+                "last_collect_hours_ago": 0,
+                "production_duration_minutes": None,
+                "remaining_seconds": None,
+                "collectable": False,
+                "daily_income": 0,
+                "build_cost": conf.get('cost', 0),
+            })
+        return jsonify(rows)
+    # Reuse logic from /api/factories but add build_cost
+    u = get_user(session['user_id'])
+    conn = get_db_connection()
+    rows = []
+    for fid, conf in FACTORY_CONFIG.items():
+        lvl = u.get('factories', {}).get(fid, 0)
+        running = bool(u.get('factory_running', {}).get(fid, True))
+        assigned = conn.execute('SELECT COALESCE(SUM(count),0) AS c FROM factory_assignments WHERE owner = ? AND factory_type = ?', 
+                                (u['username'], fid)).fetchone()['c']
+        ev = _get_current_event()
+        prod_mult = 1.0
+        if ev and ev.get('target', {}).get('type') == 'production':
+            prod_mult = float(ev.get('production_multiplier', 1.0))
+        rate_per_hour = int(FACTORY_CONFIG[fid]['rate'] * max(1,lvl) * (1 + 0.05 * assigned) * prod_mult * (1 if running else 0))
+        pr = conn.execute('SELECT price FROM prices WHERE item = ?', (FACTORY_CONFIG[fid]['type'],)).fetchone()
+        price = pr['price'] if pr else 0
+        daily_income = int(rate_per_hour * 24 * price)
+        last_collect = u.get('factory_last_collect', {}).get(fid, u.get('factory_last_update', {}).get(fid, time.time()))
+        elapsed_hours = round((time.time() - last_collect) / 3600.0, 2)
+        capacity = FACTORY_CONFIG[fid].get('worker_capacity', 0) * max(1, lvl or 1)
+        bonus_pct = int(0.05 * assigned * 100)
+        run_start = u.get('factory_run_start', {}).get(fid)
+        run_dur_min = u.get('factory_run_duration', {}).get(fid)
+        remaining_seconds = None
+        collectable = False
+        production_duration_minutes = None
+        if run_start and run_dur_min:
+            production_duration_minutes = run_dur_min
+            remaining_seconds = max(0, int(run_dur_min*60 - (time.time() - run_start)))
+            collectable = remaining_seconds == 0
+        rows.append({
+            "type": fid,
+            "name": FACTORY_CONFIG[fid]['name'],
+            "level": lvl,
+            "running": running,
+            "rate_per_hour": rate_per_hour,
+            "worker_count": assigned,
+            "worker_capacity": capacity,
+            "bonus_pct": bonus_pct,
+            "production_interval_hours": 3,
+            "last_collect_hours_ago": elapsed_hours,
+            "production_duration_minutes": production_duration_minutes,
+            "remaining_seconds": remaining_seconds,
+            "collectable": collectable,
+            "daily_income": daily_income,
+            "build_cost": FACTORY_CONFIG[fid].get('cost', 0),
+        })
+    conn.close()
+    return jsonify(rows)
+
+# ---------------------------------------------------------
+# NEW API: INVENTORY GET (guest-friendly)
+# ---------------------------------------------------------
+@app.route('/api/inventory/get')
+def api_inventory_get():
+    if 'user_id' not in session:
+        return jsonify({"items": [], "total_value": 0})
+    u = get_user(session['user_id'])
+    conn = get_db_connection()
+    rows = conn.execute('SELECT item, price FROM prices').fetchall()
+    conn.close()
+    ev = _get_current_event()
+    prices = {}
+    for r in rows:
+        p = r['price']
+        name = r['item']
+        if ev:
+            if ev.get('target', {}).get('type') == 'item' and ev['target'].get('name') == name:
+                p = max(1.0, p * ev.get('price_multiplier', 1.0))
+            elif ev.get('target', {}).get('type') == 'prices_all':
+                p = max(1.0, p * ev.get('price_multiplier', 1.0))
+        prices[name] = p
+    items = []
+    total_value = 0
+    for name, qty in u.get('inventory', {}).items():
+        if qty <= 0:
+            continue
+        price = int(prices.get(name, 0))
+        value = int(price * qty)
+        total_value += value
+        items.append({"name": name, "qty": qty, "price": price, "value": value})
+    return jsonify({"items": items, "total_value": total_value})
+
+# ---------------------------------------------------------
 # ECONOMY API: RESOURCES
 # ---------------------------------------------------------
 
