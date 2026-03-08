@@ -93,11 +93,15 @@ def _ensure_engine():
             print(f"[DB] Failed to connect to PostgreSQL using DATABASE_URL: {e}")
             raise
     else:
+        render_env = os.environ.get("RENDER", "") or os.environ.get("RENDER_SERVICE_ID", "") or os.environ.get("RENDER_SERVICE_NAME", "")
+        if render_env:
+            print("[DB][WARN] DATABASE_URL not set on Render. Using SQLite fallback for now; set DATABASE_URL to enable PostgreSQL.")
+        else:
+            print("[DB][WARN] DATABASE_URL not set. Using local SQLite fallback.")
         _USE_PG = False
-        # Fallback to SQLite file for local/dev use
         base_dir = os.path.abspath(os.path.dirname(__file__))
         db_path = os.path.join(base_dir, "globalmarket.db")
-        print(f"[DB] DATABASE_URL not set. Using local SQLite file at {db_path}")
+        print(f"[DB] SQLite path: {db_path}")
         _DB_ENGINE = create_engine(f"sqlite:///{db_path}", future=True)
 
 class _DictRow:
