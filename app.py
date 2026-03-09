@@ -78,6 +78,25 @@ def _normalize_db_url(url: str) -> str:
         return url.replace("postgres://", "postgresql+psycopg2://", 1)
     return url
 
+class MarketplaceProduct(db.Model):
+    __tablename__ = 'marketplace_products'
+    id = db.Column(db.Integer, primary_key=True)
+    seller = db.Column(db.String, nullable=False)
+    name = db.Column(db.String, nullable=False)
+    description = db.Column(db.String)
+    price = db.Column(db.Integer, nullable=False)
+    stock = db.Column(db.Integer, nullable=False)
+    is_bot = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.Float, nullable=False)
+
+class FactoryRow(db.Model):
+    __tablename__ = 'factories'
+    id = db.Column(db.Integer, primary_key=True)
+    owner = db.Column(db.String, nullable=False)
+    type = db.Column(db.String, nullable=False)
+    level = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.Float, nullable=False)
+
 def _ensure_engine():
     global _DB_ENGINE, _USE_PG
     if _DB_ENGINE is not None:
@@ -98,6 +117,7 @@ def _ensure_engine():
     from flask import current_app
     with app.app_context():
         _DB_ENGINE = db.engine
+        db.create_all()
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
