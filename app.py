@@ -112,12 +112,14 @@ def _ensure_engine():
         app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
         _USE_PG = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 2, "max_overflow": 0, "pool_pre_ping": True, "pool_recycle": 60}
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 1, "max_overflow": 0, "pool_pre_ping": True, "pool_recycle": 60}
     db.init_app(app)
     from flask import current_app
     with app.app_context():
         _DB_ENGINE = db.engine
         db.create_all()
+# Force engine and tables init at import time
+_ensure_engine()
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
