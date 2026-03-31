@@ -78,7 +78,8 @@ async function login() {
         });
         const data = await res.json();
         if (data.success) {
-            alert("Giriş başarılı (geçici: auth devre dışı)");
+            window.location.href = '/game';
+            return;
         } else {
             alert(data.message || "Giriş başarısız");
         }
@@ -121,20 +122,26 @@ async function register() {
 // CORE GAME LOOP
 // ---------------------------------------------------------
 
+let pollingInterval = null;
+let chatInterval = null;
+let localTimerInterval = null;
+
 function startPolling() {
-    // Initial fetch
+    stopPolling();
     updateAll();
-    
-    // Main Loop (2s)
-    pollingInterval = setInterval(updateAll, 2000);
-    
-    // Chat Loop (3s)
-    setInterval(fetchChat, 3000);
+    pollingInterval = setInterval(updateAll, 5000);
+    chatInterval = setInterval(fetchChat, 5000);
     fetchChat();
-    
-    // Local Timer Loop (1s) for countdowns
-    setInterval(updateLocalTimers, 1000);
+    localTimerInterval = setInterval(updateLocalTimers, 1000);
 }
+
+function stopPolling() {
+    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    if (chatInterval) { clearInterval(chatInterval); chatInterval = null; }
+    if (localTimerInterval) { clearInterval(localTimerInterval); localTimerInterval = null; }
+}
+
+window.addEventListener('beforeunload', stopPolling);
 
 async function updateAll() {
     try {
