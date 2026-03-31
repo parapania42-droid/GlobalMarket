@@ -36,6 +36,12 @@
 </div>
 
 <script>
+let mpTimers = [];
+let mpFetchState = {
+  list: false,
+  top: false,
+  recent: false
+};
 function toggleAddForm() {
   const f = document.getElementById('add-form');
   f.style.display = (f.style.display === 'none' ? 'block' : 'none');
@@ -54,11 +60,18 @@ document.addEventListener('DOMContentLoaded', () => {
   loadMarketplace();
   loadTopSellers();
   loadRecentSales();
-  setInterval(loadMarketplace, 10000);
-  setInterval(loadTopSellers, 30000);
-  setInterval(loadRecentSales, 15000);
+  mpTimers.push(setInterval(loadMarketplace, 10000));
+  mpTimers.push(setInterval(loadTopSellers, 30000));
+  mpTimers.push(setInterval(loadRecentSales, 15000));
+});
+window.addEventListener('pagehide', () => {
+  mpTimers.forEach(clearInterval);
+  mpTimers = [];
 });
 async function loadMarketplace() {
+  if (mpFetchState.list) return;
+  mpFetchState.list = true;
+  try {
   const res = await fetch('/api/marketplace/list');
   const rows = await res.json();
   const list = document.getElementById('mp-list');
@@ -89,6 +102,9 @@ async function loadMarketplace() {
       </div>
     </div>`;
   }).join('');
+  } finally {
+    mpFetchState.list = false;
+  }
 }
 async function addProduct() {
   const name = document.getElementById('mp-name').value.trim();
@@ -125,6 +141,9 @@ async function buyProduct(id) {
   if (d.success) { loadMarketplace(); }
 }
 async function loadTopSellers() {
+  if (mpFetchState.top) return;
+  mpFetchState.top = true;
+  try {
   const res = await fetch('/api/marketplace/top_sellers');
   const rows = await res.json();
   const box = document.getElementById('mp-top-sellers');
@@ -133,8 +152,14 @@ async function loadTopSellers() {
       <div>#${i+1} ${r.seller}</div>
       <div>Satış: ${r.sales} | Gelir: ${new Intl.NumberFormat('tr-TR').format(r.revenue)} TL</div>
     </div>`).join('');
+  } finally {
+    mpFetchState.top = false;
+  }
 }
 async function loadRecentSales() {
+  if (mpFetchState.recent) return;
+  mpFetchState.recent = true;
+  try {
   const res = await fetch('/api/marketplace/recent_sales');
   const rows = await res.json();
   const box = document.getElementById('mp-recent');
@@ -147,6 +172,9 @@ async function loadRecentSales() {
       <div>${new Date(r.time * 1000).toLocaleTimeString('tr-TR')} | ${new Intl.NumberFormat('tr-TR').format(r.amount)} TL</div>
     </div>`;
   }).join('');
+  } finally {
+    mpFetchState.recent = false;
+  }
 }
 </script>
 {% endblock %}

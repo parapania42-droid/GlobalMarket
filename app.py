@@ -8,6 +8,7 @@ import base64
 import urllib.request
 import urllib.error
 import shutil
+from functools import wraps
 from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -112,7 +113,7 @@ def _ensure_engine():
         app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
         _USE_PG = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 2, "max_overflow": 0, "pool_pre_ping": True, "pool_recycle": 300}
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 5, "max_overflow": 10, "pool_timeout": 30, "pool_recycle": 1800, "pool_pre_ping": True}
     db.init_app(app)
     from flask import current_app
     with app.app_context():
@@ -135,9 +136,24 @@ def shutdown_session(exception=None):
 @app.teardown_request
 def _shutdown_request_session(exception=None):
     try:
-        db.session.close()
+        if exception is None:
+            db.session.commit()
+        else:
+            db.session.rollback()
     except Exception:
-        pass
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            db.session.close()
+        except Exception:
+            pass
+        try:
+            db.session.remove()
+        except Exception:
+            pass
 
 class _DictRow:
     def __init__(self, mapping):
@@ -198,6 +214,13 @@ class _SAConnection:
         else:
             sql_conv, bind = sql, {}
         res = self._conn.execute(text(sql_conv), bind)
+        # Auto-commit write statements so pooled connections don't keep open transactions.
+        stmt = str(sql_conv).lstrip().upper()
+        if stmt.startswith(("INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "REPLACE")):
+            try:
+                self._conn.commit()
+            except Exception:
+                pass
         try:
             return _SAResultWrapper(res)
         except Exception:
@@ -2726,6 +2749,32 @@ def api_admin_user_logs():
     rows = conn.execute('SELECT * FROM user_logs WHERE user_id = ? ORDER BY timestamp DESC LIMIT 200', (uid,)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+def _wrap_routes_with_session_cleanup():
+    for endpoint, view_func in list(app.view_functions.items()):
+        if endpoint == 'static':
+            continue
+        if getattr(view_func, "_session_cleanup_wrapped", False):
+            continue
+
+        @wraps(view_func)
+        def _wrapped(*args, __view_func=view_func, **kwargs):
+            try:
+                return __view_func(*args, **kwargs)
+            finally:
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
+
+        _wrapped._session_cleanup_wrapped = True
+        app.view_functions[endpoint] = _wrapped
+
+_wrap_routes_with_session_cleanup()
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db.session.remove()
 
 if __name__ == '__main__':
     init_db()

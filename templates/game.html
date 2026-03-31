@@ -139,7 +139,11 @@
         </div>
     </div>
     <script>
+let gameSummaryTimer = null;
+let isSummaryFetching = false;
     async function loadSummary() {
+        if (isSummaryFetching) return;
+        isSummaryFetching = true;
         try {
             const [statsRes, invRes, tasksRes] = await Promise.all([
                 fetch('/api/economy/stats'),
@@ -164,7 +168,20 @@
               </div>
             `;
         } catch (e) {}
+        finally {
+            isSummaryFetching = false;
+        }
     }
-    document.addEventListener('DOMContentLoaded', () => { loadSummary(); setInterval(loadSummary, 10000); });
+document.addEventListener('DOMContentLoaded', () => {
+    loadSummary();
+    if (gameSummaryTimer) clearInterval(gameSummaryTimer);
+    gameSummaryTimer = setInterval(loadSummary, 10000);
+});
+window.addEventListener('pagehide', () => {
+    if (gameSummaryTimer) {
+        clearInterval(gameSummaryTimer);
+        gameSummaryTimer = null;
+    }
+});
     </script>
 {% endblock %}

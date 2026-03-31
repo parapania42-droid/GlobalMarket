@@ -50,7 +50,13 @@
 </div>
 
 <script>
+let logisticsTaskTimer = null;
+let isVehiclesFetching = false;
+let isTasksFetching = false;
 async function loadVehicles() {
+  if (isVehiclesFetching) return;
+  isVehiclesFetching = true;
+  try {
   const res = await fetch('/api/logistics/vehicles');
   if (!res.ok) return;
   const rows = await res.json();
@@ -64,6 +70,9 @@ async function loadVehicles() {
   }
   const sel = document.getElementById('task-vehicle');
   sel.innerHTML = rows.map(v => `<option value="${v.id}">${v.type} (#${v.id})</option>`).join('');
+  } finally {
+    isVehiclesFetching = false;
+  }
 }
 async function buyVehicle(type) {
   const res = await fetch('/api/logistics/vehicles/buy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type})});
@@ -72,6 +81,9 @@ async function buyVehicle(type) {
   loadVehicles();
 }
 async function loadTasks() {
+  if (isTasksFetching) return;
+  isTasksFetching = true;
+  try {
   const res = await fetch('/api/logistics/tasks');
   if (!res.ok) return;
   const rows = await res.json();
@@ -89,6 +101,9 @@ async function loadTasks() {
       <div>${t.delivered ? 'Tamamlandı' : 'ETA: ' + min + ' dk ' + sec + ' sn'}</div>
     </div>`;
   }).join('');
+  } finally {
+    isTasksFetching = false;
+  }
 }
 async function createTask() {
   const vehicle_id = parseInt(document.getElementById('task-vehicle').value);
@@ -105,6 +120,17 @@ async function createTask() {
   alert(data.message || '');
   loadTasks();
 }
-document.addEventListener('DOMContentLoaded', () => { loadVehicles(); loadTasks(); setInterval(loadTasks, 5000); });
+document.addEventListener('DOMContentLoaded', () => {
+  loadVehicles();
+  loadTasks();
+  if (logisticsTaskTimer) clearInterval(logisticsTaskTimer);
+  logisticsTaskTimer = setInterval(loadTasks, 5000);
+});
+window.addEventListener('pagehide', () => {
+  if (logisticsTaskTimer) {
+    clearInterval(logisticsTaskTimer);
+    logisticsTaskTimer = null;
+  }
+});
 </script>
 {% endblock %}

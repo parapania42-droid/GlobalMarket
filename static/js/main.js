@@ -1,5 +1,4 @@
 // ===== GLOBAL STATE =====
-let pollingInterval = null;
 let globalItems = {};
 let globalFactoryConfig = {};
 let globalPlayer = {};
@@ -15,6 +14,18 @@ let __factoryModalTimer = null;
 let __factoryModalCurrentId = null;
 let __eventTimer = null;
 let __expeditionTimer = null;
+let __isUpdatingAll = false;
+const __fetchLocks = {};
+
+function acquireFetchLock(key) {
+    if (__fetchLocks[key]) return false;
+    __fetchLocks[key] = true;
+    return true;
+}
+
+function releaseFetchLock(key) {
+    __fetchLocks[key] = false;
+}
 
 // Helper: Format Money
 function formatMoney(amount) {
@@ -51,9 +62,12 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchPricesHome();
         fetchNewsHome();
         fetchLeaderboardHome();
-        setInterval(fetchPricesHome, 10000);
-        setInterval(fetchNewsHome, 60000);
-        setInterval(fetchLeaderboardHome, 15000);
+        if (homePricesInterval) clearInterval(homePricesInterval);
+        if (homeNewsInterval) clearInterval(homeNewsInterval);
+        if (homeLeaderboardInterval) clearInterval(homeLeaderboardInterval);
+        // homePricesInterval = setInterval(fetchPricesHome, 10000);
+        // homeNewsInterval = setInterval(fetchNewsHome, 60000);
+        // homeLeaderboardInterval = setInterval(fetchLeaderboardHome, 15000);
     } 
 });
 
@@ -125,25 +139,58 @@ async function register() {
 let pollingInterval = null;
 let chatInterval = null;
 let localTimerInterval = null;
+let homePricesInterval = null;
+let homeNewsInterval = null;
+let homeLeaderboardInterval = null;
+
+function clearAllIntervalsHard() {
+    // Safety net: clear any interval left behind by page scripts.
+    for (let id = 1; id <= 20000; id += 1) {
+        clearInterval(id);
+    }
+}
 
 function startPolling() {
     stopPolling();
     updateAll();
-    pollingInterval = setInterval(updateAll, 5000);
-    chatInterval = setInterval(fetchChat, 5000);
+    // pollingInterval = setInterval(updateAll, 5000);
+    // chatInterval = setInterval(fetchChat, 5000);
     fetchChat();
-    localTimerInterval = setInterval(updateLocalTimers, 1000);
+    // localTimerInterval = setInterval(updateLocalTimers, 1000);
 }
 
 function stopPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
     if (chatInterval) { clearInterval(chatInterval); chatInterval = null; }
     if (localTimerInterval) { clearInterval(localTimerInterval); localTimerInterval = null; }
+    if (homePricesInterval) { clearInterval(homePricesInterval); homePricesInterval = null; }
+    if (homeNewsInterval) { clearInterval(homeNewsInterval); homeNewsInterval = null; }
+    if (homeLeaderboardInterval) { clearInterval(homeLeaderboardInterval); homeLeaderboardInterval = null; }
+    if (__eventTimer) { clearInterval(__eventTimer); __eventTimer = null; }
+    if (__factoryModalTimer) { clearInterval(__factoryModalTimer); __factoryModalTimer = null; }
+    clearAllIntervalsHard();
 }
 
 window.addEventListener('beforeunload', stopPolling);
+window.addEventListener('pagehide', stopPolling);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        stopPolling();
+    }
+});
+document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[href]');
+    if (!link) return;
+    const href = (link.getAttribute('href') || '').trim();
+    if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+    if (href.startsWith('/') || href.startsWith(window.location.origin)) {
+        stopPolling();
+    }
+});
 
 async function updateAll() {
+    if (__isUpdatingAll) return;
+    __isUpdatingAll = true;
     try {
         await Promise.all([
             fetchMarket(), 
@@ -152,6 +199,8 @@ async function updateAll() {
         fetchEconomyStats();
     } catch (e) {
         console.error("Update failed:", e);
+    } finally {
+        __isUpdatingAll = false;
     }
 }
 
@@ -184,6 +233,7 @@ function updateLocalTimers() {
 // ---------------------------------------------------------
 
 async function fetchMarket() {
+    if (!acquireFetchLock('fetchMarket')) return;
     try {
         const res = await fetch('/api/market');
         if (!res.ok) return;
@@ -193,6 +243,8 @@ async function fetchMarket() {
         renderMarket(data);
     } catch (e) {
         console.error("Market fetch error:", e);
+    } finally {
+        releaseFetchLock('fetchMarket');
     }
 }
 
@@ -237,7 +289,8 @@ function renderHUD(player) {
         float.style.left = `${rect.left}px`;
         float.style.top = `${rect.top}px`;
         document.body.appendChild(float);
-        setTimeout(() => { float.remove(); }, 1000);
+        // setTimeout(() => { float.remove(); }, 1000);
+        float.remove();
     }
     previousMoney = player.money;
     document.getElementById('hud-level').textContent = player.level;
@@ -271,6 +324,7 @@ function renderHUD(player) {
 }
 
 async function fetchEconomyStats() {
+    if (!acquireFetchLock('fetchEconomyStats')) return;
     try {
         const res = await fetch('/api/economy/stats');
         if (!res.ok) return;
@@ -294,6 +348,9 @@ async function fetchEconomyStats() {
             earnBox.textContent = 'Son işlemler yakında listelenecek.';
         }
     } catch (e) {}
+    finally {
+        releaseFetchLock('fetchEconomyStats');
+    }
 }
 function renderInventory(player) {
     const invList = document.getElementById('inventory-list');
@@ -430,7 +487,7 @@ function renderMarket(data) {
                 banner.textContent = `🔥 ${baseText} – ${m}:${s.toString().padStart(2,'0')} KALDI`;
             };
             updateBanner();
-            __eventTimer = setInterval(updateBanner, 1000);
+            // __eventTimer = setInterval(updateBanner, 1000);
         } else {
             banner.textContent = baseText;
         }
@@ -507,6 +564,7 @@ function renderMarket(data) {
 
 // ---------------- HOME DASHBOARD WIDGETS ----------------
 async function fetchPricesHome() {
+    if (!acquireFetchLock('fetchPricesHome')) return;
     try {
         const res = await fetch('/api/market/prices');
         if (!res.ok) return;
@@ -523,9 +581,13 @@ async function fetchPricesHome() {
         }).join('');
         list.innerHTML = priceHtml;
     } catch (e) {}
+    finally {
+        releaseFetchLock('fetchPricesHome');
+    }
 }
 
 async function fetchNewsHome() {
+    if (!acquireFetchLock('fetchNewsHome')) return;
     try {
         const res = await fetch('/api/news');
         if (!res.ok) return;
@@ -539,9 +601,13 @@ async function fetchNewsHome() {
             </div>
         `).join('');
     } catch (e) {}
+    finally {
+        releaseFetchLock('fetchNewsHome');
+    }
 }
 
 async function fetchLeaderboardHome() {
+    if (!acquireFetchLock('fetchLeaderboardHome')) return;
     try {
         const tbody = document.getElementById('home-leaderboard-body');
         if (!tbody) return;
@@ -555,6 +621,9 @@ async function fetchLeaderboardHome() {
             </tr>
         `).join('');
     } catch (e) {}
+    finally {
+        releaseFetchLock('fetchLeaderboardHome');
+    }
 }
 function renderMissions(player) {
     const missionBox = document.getElementById('mission-box');
@@ -746,10 +815,11 @@ function openFactoryModal(fid) {
     
     updateFactoryModal(fid);
     if (__factoryModalTimer) clearInterval(__factoryModalTimer);
-    __factoryModalTimer = setInterval(() => updateFactoryModal(fid), 1000);
+    // __factoryModalTimer = setInterval(() => updateFactoryModal(fid), 1000);
 }
 
 async function updateFactoryModal(fid) {
+    if (!acquireFetchLock(`updateFactoryModal:${fid}`)) return;
     try {
         const res = await fetch(`/api/factory_status/${fid}`);
         if (!res.ok) return;
@@ -789,6 +859,8 @@ async function updateFactoryModal(fid) {
         }
     } catch (e) {
         // ignore
+    } finally {
+        releaseFetchLock(`updateFactoryModal:${fid}`);
     }
 }
 
@@ -882,8 +954,12 @@ function toggleChat() {
 }
 
 async function fetchChat() {
+    if (!acquireFetchLock('fetchChat')) return;
     const body = document.getElementById('chat-body');
-    if (body && body.style.display === 'none') return;
+    if (body && body.style.display === 'none') {
+        releaseFetchLock('fetchChat');
+        return;
+    }
     
     try {
         const res = await fetch('/api/chat');
@@ -907,6 +983,9 @@ async function fetchChat() {
             chatDiv.scrollTop = chatDiv.scrollHeight;
         }
     } catch (e) {}
+    finally {
+        releaseFetchLock('fetchChat');
+    }
 }
 
 async function sendChat() {

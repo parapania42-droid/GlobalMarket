@@ -12,6 +12,13 @@
     </div>
 
 <script>
+let factoryRemainTimers = {};
+
+function clearFactoryTimers() {
+  Object.values(factoryRemainTimers).forEach(clearInterval);
+  factoryRemainTimers = {};
+}
+
 async function loadFactories() {
     let data = [];
     try {
@@ -94,6 +101,7 @@ async function loadFactories() {
           </div>
       </div>
     `).join('');
+    clearFactoryTimers();
     // Per-second countdown update
     data.forEach(f => {
       const el = document.getElementById('remain-'+f.type);
@@ -110,9 +118,15 @@ async function loadFactories() {
           const pct = Math.min(100, Math.max(0, 100 * (1 - left / total)));
           bar.style.width = pct + '%';
         }
-        if (s > 0) requestAnimationFrame(update);
+        if (s <= 0 || !document.body.contains(el)) {
+          if (factoryRemainTimers[f.type]) {
+            clearInterval(factoryRemainTimers[f.type]);
+            delete factoryRemainTimers[f.type];
+          }
+        }
       };
       update();
+      factoryRemainTimers[f.type] = setInterval(update, 1000);
     });
     // Fetch next cost per factory for display
     data.forEach(async f => {
@@ -169,8 +183,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (y) window.scrollTo(0, y);
 });
 window.addEventListener('beforeunload', () => {
+  clearFactoryTimers();
   localStorage.setItem('factory_scroll_y', String(window.scrollY || 0));
 });
+window.addEventListener('pagehide', clearFactoryTimers);
 async function assignWorkers(type) {
   const count = parseInt(document.getElementById('assign-'+type).value || '0');
   if (!count || count <= 0) return alert('Geçerli adet girin');
