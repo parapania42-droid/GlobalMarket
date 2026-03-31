@@ -12,7 +12,7 @@ from functools import wraps
 from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import text
+from sqlalchemy import text, pool
 from flask_sqlalchemy import SQLAlchemy
 import re
 from urllib.parse import urlparse
@@ -22,8 +22,8 @@ STARTING_MONEY = 5000
 
 app = Flask(__name__)
 app.secret_key = "globalmarket_fixed_secret_key"
-app.config["SESSION_PERMANENT"] = True
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+app.config["SESSION_PERMANENT"] = False
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 app.config.update(
     SESSION_COOKIE_SECURE=False,
     SESSION_COOKIE_HTTPONLY=True,
@@ -137,30 +137,21 @@ def _ensure_engine():
     global _DB_ENGINE, _USE_PG
     if _DB_ENGINE is not None:
         return
-    db_url = DATABASE_URL
-    if db_url:
-        norm = _normalize_db_url(db_url)
-        app.config['SQLALCHEMY_DATABASE_URI'] = norm
-        _USE_PG = True
-    else:
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        db_path = os.path.join(base_dir, "globalmarket.db")
-        app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
-        _USE_PG = False
+    db_url = os.environ.get("DATABASE_URL")
+    if db_url and db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    connect_args = {}
-    if _USE_PG:
-        connect_args["sslmode"] = "require"
+    
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        "pool_size": 3, 
-        "max_overflow": 0, 
-        "pool_timeout": 30, 
-        "pool_recycle": 1800, 
-        "pool_pre_ping": True,
-        "connect_args": connect_args
+        "poolclass": pool.NullPool,
+        "connect_args": {
+            "sslmode": "require",
+            "connect_timeout": 10
+        }
     }
     db.init_app(app)
-    from flask import current_app
     with app.app_context():
         _DB_ENGINE = db.engine
         db.create_all()
@@ -177,6 +168,11 @@ def shutdown_session(exception=None):
         db.session.remove()
     except Exception:
         pass
+
+@app.after_request
+def add_header(response):
+    db.session.remove()
+    return response
 
 @app.teardown_request
 def _shutdown_request_session(exception=None):
@@ -1068,7 +1064,6 @@ def login_page():
             return jsonify({"success": False, "message": "Şifre hatalı"})
 
         # Giriş başarılı: Session ata
-        session.permanent = True
         session['user_id'] = row['username']
         return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
     except Exception as e:
@@ -1098,7 +1093,6 @@ def register():
     
     if create_user(username, password):
         # Register başarılı olduğunda session set et ve yönlendir
-        session.permanent = True
         session['user_id'] = username
         return jsonify({"success": True, "message": "Kayıt başarılı! Hoş geldiniz.", "redirect": "/game"})
     return jsonify({"success": False, "message": "Kayıt sırasında teknik bir hata oluştu"})

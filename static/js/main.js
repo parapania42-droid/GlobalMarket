@@ -47,11 +47,9 @@ function showMessage(msg, type = 'info') {
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
     if (path === '/leaderboard') {
-        fetchLeaderboard();
+        // fetchLeaderboard(); // Otomatik fetch kapatıldı
     } else if (path === '/game') {
-        // startPolling() ve otomatik döngüler kaldırıldı. 
-        // Veriler sadece sayfa yüklendiğinde bir kez çekilecek.
-        updateAll();
+        // updateAll(); // Otomatik fetch kapatıldı
         
         // Bind Enter key for chat
         const chatInput = document.getElementById('chat-input');
@@ -61,9 +59,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         // Home widgets: prices, news, leaderboard
-        fetchPricesHome();
-        fetchNewsHome();
-        fetchLeaderboardHome();
+        // fetchPricesHome(); // Otomatik fetch kapatıldı
+        // fetchNewsHome(); // Otomatik fetch kapatıldı
+        // fetchLeaderboardHome(); // Otomatik fetch kapatıldı
     } 
 });
 
