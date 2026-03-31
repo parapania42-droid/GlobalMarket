@@ -880,7 +880,11 @@ def create_user(username, password):
         "money": STARTING_MONEY,
         "level": 1,
         "xp": 0,
-        "inventory": {"Odun": 0, "Taş": 0, "Demir": 0, "Çelik": 0, "Plastik": 0, "Elektronik": 0, "Gıda": 0, "Tekstil": 0},
+        "inventory": {
+            "Odun": 0, "Taş": 0, "Demir": 0, "Çelik": 0, 
+            "Plastik": 0, "Elektronik": 0, "Gıda": 0, "Tekstil": 0,
+            "Buğday": 5  # Hediye Buğday
+        },
         "factories": {},
         "factory_storage": {},
         "factory_last_update": {},
@@ -1056,13 +1060,21 @@ def login_page():
     conn = get_db_connection()
     try:
         row = conn.execute('SELECT username, password_hash FROM users WHERE username = ?', (canonical,)).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Kullanıcı veritabanında mevcut değil"})
+            
+        if not check_password_hash(row['password_hash'], password):
+            return jsonify({"success": False, "message": "Şifre hatalı"})
+
+        session.clear() # Mevcut misafir session'ı temizle
+        session['user_id'] = row['username']
+        session.permanent = True
+        return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({"success": False, "message": "Giriş sırasında bir hata oluştu"})
     finally:
         conn.close()
-    if not row or not check_password_hash(row['password_hash'], password):
-        return jsonify({"success": False, "message": "Şifre hatalı"})
-
-    session['user_id'] = row['username']
-    return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -1084,11 +1096,11 @@ def register():
         return jsonify({"success": False, "message": "Kullanıcı adı kullanımda"})
     
     if create_user(username, password):
-        # Kayıt sonrası veritabanını sağlamlaştır
-        with app.app_context():
-            db.create_all()
-        return jsonify({"success": True, "message": "Kayıt başarılı! Giriş yapabilirsiniz."})
-    return jsonify({"success": False, "message": "Kayıt başarısız"})
+        session.clear()
+        session['user_id'] = username
+        session.permanent = True
+        return jsonify({"success": True, "message": "Kayıt başarılı! Hoş geldiniz.", "redirect": "/game"})
+    return jsonify({"success": False, "message": "Kayıt sırasında teknik bir hata oluştu"})
 
 @app.route('/logout')
 def logout():
@@ -1104,7 +1116,13 @@ def logout_post():
 
 @app.route('/game')
 def game():
-    return render_template('game.html', active_page='game')
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    u = get_user(session['user_id'])
+    if not u:
+        session.clear()
+        return redirect(url_for('login_page'))
+    return render_template('game.html', active_page='game', user=u)
 
 @app.route('/leaderboard')
 def leaderboard_page():
