@@ -140,17 +140,21 @@ def _ensure_engine():
     if _DB_ENGINE is not None:
         return
     
-    # Veritabanı URL'sini Render için düzelt 
+    # Veritabanı URL'sini Render için düzelt ve SSL zorla
     db_url = os.environ.get("DATABASE_URL") 
-    if db_url and db_url.startswith("postgres://"): 
-        db_url = db_url.replace("postgres://", "postgresql://", 1) 
+    if db_url:
+        if db_url.startswith("postgres://"): 
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        if "sslmode=" not in db_url:
+            sep = "&" if "?" in db_url else "?"
+            db_url += f"{sep}sslmode=require"
     
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False 
     
     # Bağlantı havuzunu tamamen kapat ve SSL zorla 
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = { 
-        "poolclass": NullPool, 
+        "poolclass": sqlalchemy.pool.NullPool, 
         "connect_args": { 
             "sslmode": "require" 
         } 
@@ -1037,9 +1041,21 @@ def calculate_production(user):
 # ROUTES
 # ---------------------------------------------------------
 
+@app.before_request
+def load_logged_in_user():
+    g.user = None
+    if 'user_id' in session:
+        u = get_user(session['user_id'])
+        if u:
+            g.user = u
+        else:
+            session.clear()
+
 @app.route('/')
 def index():
-    return render_template('game.html', active_page='game')
+    if g.user:
+        return redirect(url_for('game'))
+    return redirect(url_for('login_page'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
@@ -1066,6 +1082,7 @@ def login_page():
             return jsonify({"success": False, "message": "Şifre hatalı"})
 
         # Giriş başarılı: Session ata
+        session.permanent = True
         session['user_id'] = row['username']
         return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
     except Exception as e:
@@ -1095,6 +1112,7 @@ def register():
     
     if create_user(username, password):
         # Register başarılı olduğunda session set et ve yönlendir
+        session.permanent = True
         session['user_id'] = username
         return jsonify({"success": True, "message": "Kayıt başarılı! Hoş geldiniz.", "redirect": "/game"})
     return jsonify({"success": False, "message": "Kayıt sırasında teknik bir hata oluştu"})
