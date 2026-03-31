@@ -18,6 +18,7 @@ import re
 from urllib.parse import urlparse
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+STARTING_MONEY = 5000
 
 app = Flask(__name__)
 app.secret_key = "globalmarket_fixed_secret_key"
@@ -73,6 +74,36 @@ FACTORY_CONFIG = {
 _DB_ENGINE = None
 _USE_PG = False
 db = SQLAlchemy()
+
+# TEMPORARY DB RESET (Remove after first run)
+def _reset_db():
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_path = os.path.join(base_dir, "globalmarket.db")
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        print("Database file deleted for reset.")
+
+# _reset_db() # Uncomment this line to reset database on next run
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db.session.remove()
+
+def _normalize_username(username: str) -> str:
+    if username is None:
+        return ""
+    return str(username).strip()
+
+def _find_username_ci(username: str):
+    uname = _normalize_username(username)
+    if not uname:
+        return None
+    conn = get_db_connection()
+    try:
+        row = conn.execute('SELECT username FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1', (uname,)).fetchone()
+        return row['username'] if row else None
+    finally:
+        conn.close()
 
 def _normalize_db_url(url: str) -> str:
     if url.startswith("postgres://"):
@@ -772,12 +803,18 @@ def start_bot_sellers():
 start_bot_sellers()
 
 def get_user(username):
+    uname = _normalize_username(username)
     conn = get_db_connection()
-    user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-    conn.close()
+    try:
+        user = conn.execute('SELECT * FROM users WHERE username = ?', (uname,)).fetchone()
+        if not user and uname:
+            user = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1', (uname,)).fetchone()
+    finally:
+        conn.close()
     if user:
         u_data = json.loads(user['data'])
-        u_data['username'] = username # ensure username is in data
+        db_username = user['username']
+        u_data['username'] = db_username
         
         # Migration/Repair for missing keys
         if "inventory" not in u_data: u_data["inventory"] = {}
@@ -793,8 +830,14 @@ def get_user(username):
         if "net_worth" not in u_data: u_data["net_worth"] = 0
         if "xp" not in u_data: u_data["xp"] = 0
         if "level" not in u_data: u_data["level"] = 1
-        if "money" not in u_data: u_data["money"] = 0
+        if "money" not in u_data: u_data["money"] = STARTING_MONEY
+        try:
+            u_data["money"] = max(0, int(u_data.get("money", STARTING_MONEY)))
+        except Exception:
+            u_data["money"] = STARTING_MONEY
         if "workers_available" not in u_data: u_data["workers_available"] = 0
+        if "avg_buy_prices" not in u_data: u_data["avg_buy_prices"] = {}
+        if "council_member" not in u_data: u_data["council_member"] = (db_username.lower() == "konsey")
         
         return u_data
     return None
@@ -812,7 +855,8 @@ def save_user(user_data):
         pass
 
 def create_user(username, password):
-    if get_user(username):
+    username = _normalize_username(username)
+    if _find_username_ci(username):
         return False
         
     pw_hash = generate_password_hash(password)
@@ -820,7 +864,7 @@ def create_user(username, password):
     # Initial State
     initial_data = {
         "username": username,
-        "money": 1000,
+        "money": STARTING_MONEY,
         "level": 1,
         "xp": 0,
         "inventory": {"Odun": 0, "Taş": 0, "Demir": 0, "Çelik": 0, "Plastik": 0, "Elektronik": 0, "Gıda": 0, "Tekstil": 0},
@@ -831,7 +875,7 @@ def create_user(username, password):
         "factory_run_start": {},
         "factory_run_duration": {},
         "factory_boosts": {},
-        "net_worth": 1000,
+        "net_worth": STARTING_MONEY,
         "mission": {"description": "İlk fabrikanı kur!", "target_qty": 1, "current_qty": 0, "reward": 500},
         "last_active": time.time(),
         "last_login": 0,
@@ -843,15 +887,23 @@ def create_user(username, password):
     }
     
     conn = get_db_connection()
-    conn.execute('INSERT INTO users (username, password_hash, data) VALUES (?, ?, ?)',
-                 (username, pw_hash, json.dumps(initial_data)))
-    # assign stable user_id
-    row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
-    next_id = int(row['m']) + 1 if row and row['m'] else 1
-    conn.execute('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (?, ?)', (username, next_id))
-    conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (next_id, 'register', 0, time.time()))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute('INSERT INTO users (username, password_hash, data) VALUES (?, ?, ?)',
+                     (username, pw_hash, json.dumps(initial_data)))
+        # assign stable user_id
+        row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
+        next_id = int(row['m']) + 1 if row and row['m'] else 1
+        conn.execute('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (?, ?)', (username, next_id))
+        conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (next_id, 'register', 0, time.time()))
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        conn.close()
     try:
         backup_database()
     except Exception:
@@ -977,22 +1029,47 @@ def index():
 def login_page():
     if request.method == 'GET':
         return render_template('login.html')
-        
-    return jsonify({"success": True})
+
+    data = request.get_json(silent=True) or {}
+    username = _normalize_username(data.get('username'))
+    password = data.get('password') or ""
+    if not username or not password:
+        return jsonify({"success": False, "message": "Kullanıcı adı ve şifre gerekli"})
+
+    canonical = _find_username_ci(username)
+    if not canonical:
+        return jsonify({"success": False, "message": "Kullanıcı bulunamadı"})
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute('SELECT username, password_hash FROM users WHERE username = ?', (canonical,)).fetchone()
+    finally:
+        conn.close()
+    if not row or not check_password_hash(row['password_hash'], password):
+        return jsonify({"success": False, "message": "Şifre hatalı"})
+
+    session['user_id'] = row['username']
+    return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'GET':
         return render_template('register.html')
 
-    data = request.json
-    username = data.get('username')
+    data = request.get_json(silent=True) or {}
+    username = _normalize_username(data.get('username'))
     password = data.get('password')
     
-    if not username or not password or len(password) < 6:
+    if not username:
+        return jsonify({"success": False, "message": "Kullanıcı adı gerekli"})
+    if not re.match(r"^[A-Za-z0-9_]{3,24}$", username):
+        return jsonify({"success": False, "message": "Kullanıcı adı 3-24 karakter olmalı (harf/rakam/_)"})
+    if not password or len(password) < 6:
         return jsonify({"success": False, "message": "Şifre en az 6 karakter"})
-    if get_user(username):
+    canonical = _find_username_ci(username)
+    if canonical:
         return jsonify({"success": False, "message": "Kullanıcı adı kullanımda"})
+    
     if create_user(username, password):
         return jsonify({"success": True, "message": "Kayıt başarılı! Giriş yapabilirsiniz."})
     return jsonify({"success": False, "message": "Kayıt başarısız"})
@@ -1691,10 +1768,99 @@ def api_inventory_get():
         if qty <= 0:
             continue
         price = int(prices.get(name, 0))
+        avg_buy = int((u.get("avg_buy_prices", {}) or {}).get(name, max(1, int(price * 0.9))))
         value = int(price * qty)
+        pnl = int((price - avg_buy) * qty)
         total_value += value
-        items.append({"name": name, "qty": qty, "price": price, "value": value})
+        items.append({"name": name, "qty": qty, "price": price, "value": value, "avg_buy": avg_buy, "pnl": pnl})
     return jsonify({"items": items, "total_value": total_value})
+
+@app.route('/api/market/overview')
+def api_market_overview():
+    focus_map = {
+        "Buğday": "Buğday",
+        "Demir": "Demir",
+        "Altın": "Altın",
+        "Teknoloji": "Elektronik"
+    }
+    conn = get_db_connection()
+    out = []
+    try:
+        for label, item_name in focus_map.items():
+            row = conn.execute('SELECT price, last_change FROM prices WHERE item = ?', (item_name,)).fetchone()
+            price = int(row['price']) if row else 0
+            last_change = float(row['last_change']) if row else 0.0
+            trend = "Yükselişte" if last_change >= 0 else "Düşüşte"
+            out.append({
+                "label": label,
+                "item": item_name,
+                "price": price,
+                "last_change": last_change,
+                "trend": trend
+            })
+    finally:
+        conn.close()
+    return jsonify(out)
+
+@app.route('/api/market/quick_buy', methods=['POST'])
+def api_market_quick_buy():
+    if 'user_id' not in session:
+        return jsonify({"success": False}), 401
+    data = request.json or {}
+    item = str(data.get('item', '')).strip()
+    qty = int(data.get('qty', 1) or 1)
+    if qty <= 0:
+        return jsonify({"success": False, "message": "Geçersiz miktar"})
+    u = get_user(session['user_id'])
+    conn = get_db_connection()
+    try:
+        row = conn.execute('SELECT price FROM prices WHERE item = ?', (item,)).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Ürün bulunamadı"})
+        unit_price = int(row['price'])
+        total = unit_price * qty
+        if u.get('money', 0) < total:
+            return jsonify({"success": False, "message": "Yetersiz bakiye"})
+        with lock:
+            old_qty = int(u.get('inventory', {}).get(item, 0))
+            old_avg = int((u.get('avg_buy_prices', {}) or {}).get(item, unit_price))
+            new_qty = old_qty + qty
+            weighted = int(((old_qty * old_avg) + (qty * unit_price)) / max(1, new_qty))
+            u['money'] = int(u.get('money', 0) - total)
+            u.setdefault('inventory', {})[item] = new_qty
+            u.setdefault('avg_buy_prices', {})[item] = weighted
+            save_user(u)
+    finally:
+        conn.close()
+    return jsonify({"success": True, "message": f"{qty} {item} alındı", "money": u.get('money', 0)})
+
+@app.route('/api/market/quick_sell', methods=['POST'])
+def api_market_quick_sell():
+    if 'user_id' not in session:
+        return jsonify({"success": False}), 401
+    data = request.json or {}
+    item = str(data.get('item', '')).strip()
+    qty = int(data.get('qty', 1) or 1)
+    if qty <= 0:
+        return jsonify({"success": False, "message": "Geçersiz miktar"})
+    u = get_user(session['user_id'])
+    have = int(u.get('inventory', {}).get(item, 0))
+    if have < qty:
+        return jsonify({"success": False, "message": "Yetersiz stok"})
+    conn = get_db_connection()
+    try:
+        row = conn.execute('SELECT price FROM prices WHERE item = ?', (item,)).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Ürün bulunamadı"})
+        unit_price = int(row['price'])
+        total = unit_price * qty
+        with lock:
+            u['inventory'][item] = have - qty
+            u['money'] = int(u.get('money', 0) + total)
+            save_user(u)
+    finally:
+        conn.close()
+    return jsonify({"success": True, "message": f"{qty} {item} satıldı", "money": u.get('money', 0)})
 
 # ---------------------------------------------------------
 # ECONOMY API: RESOURCES

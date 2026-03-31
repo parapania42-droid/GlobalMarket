@@ -2,9 +2,16 @@
 
 {% block content %}
 <div class="container" style="padding-top: 20px;">
+    <div class="card" style="margin-bottom: 15px; background:linear-gradient(145deg,#151a26,#101521); border:1px solid #2f3d57;">
+        <div class="card-header">
+            <h2>👤 Profil & Konsey</h2>
+        </div>
+        <div id="profile-panel" class="hint-text">Profil yükleniyor...</div>
+    </div>
+
     <div class="card">
         <div class="card-header">
-            <h2>🏆 Liderlik Tablosu</h2>
+            <h2>🏆 Global Sıralama</h2>
         </div>
         <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse;">
@@ -25,7 +32,36 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', fetchLeaderboard);
+document.addEventListener('DOMContentLoaded', () => {
+    loadProfilePanel();
+    fetchLeaderboard();
+});
+
+function rankTitle(netWorth) {
+    if (netWorth >= 15000000) return 'Borsa Kaplanı';
+    if (netWorth >= 4000000) return 'Strateji Ustası';
+    if (netWorth >= 1000000) return 'Büyük Tüccar';
+    return 'Çaylak Tüccar';
+}
+
+async function loadProfilePanel() {
+    try {
+        const res = await fetch('/api/me');
+        const me = res.ok ? await res.json() : {};
+        const panel = document.getElementById('profile-panel');
+        const worth = Number(me.net_worth || 0);
+        const title = rankTitle(worth);
+        const isCouncil = !!me.council_member || String(me.username || '').toLowerCase().includes('konsey');
+        panel.innerHTML = `
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:8px;">
+                <div><strong>Oyuncu:</strong> ${me.username || '-'}</div>
+                <div><strong>Ticaret Unvanı:</strong> <span style="color:var(--warning)">${title}</span></div>
+                <div><strong>Net Servet:</strong> ${new Intl.NumberFormat('tr-TR').format(worth)} TL</div>
+                <div><strong>KONSEY Rozeti:</strong> ${isCouncil ? '🛡️ KONSEY ÜYESİ' : '—'}</div>
+            </div>
+        `;
+    } catch (e) {}
+}
 
 async function fetchLeaderboard() {
     try {

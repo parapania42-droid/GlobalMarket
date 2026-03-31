@@ -5,9 +5,18 @@
   <div class="card">
     <div class="card-header">
       <h2>📦 Envanter</h2>
-      <div class="hint-text">Ürünlerinizin miktarı ve tahmini piyasa değeri.</div>
+      <div class="hint-text">Depo durumu, ortalama alış fiyatı ve anlık kar/zarar görünümü.</div>
     </div>
     <div id="inventory-total" class="net-worth">Toplam Değer: 0 TL</div>
+    <div style="margin:10px 0;">
+      <div style="display:flex; justify-content:space-between; font-size:0.9em;">
+        <span>Depo Doluluk Oranı</span>
+        <span id="capacity-text">0 / 1000 kg</span>
+      </div>
+      <div style="height:12px; background:#232833; border-radius:999px; overflow:hidden; border:1px solid #303b50;">
+        <div id="capacity-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#2ecc71,#f1c40f,#e74c3c);"></div>
+      </div>
+    </div>
 
     <div style="display:flex; gap:8px; margin-bottom:12px;">
       <button id="tab-raw" class="btn btn-sm btn-secondary">Hammaddeler</button>
@@ -48,12 +57,20 @@ async function loadInventory() {
             <div style="color:var(--success)">${new Intl.NumberFormat('tr-TR').format(it.price)} TL</div>
           </div>
           <div style="font-size:0.9em; color:var(--text-muted); margin:6px 0;">Miktar: ${it.qty}</div>
-          <div style="font-weight:bold; color:var(--success)">Değer: ${new Intl.NumberFormat('tr-TR').format(it.value)} TL</div>
-          <button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="alert('Markette sat fonksiyonu yakında')">Markette Sat</button>
+          <div style="font-size:0.9em; color:var(--text-muted);">Ortalama Alış Fiyatı: ${new Intl.NumberFormat('tr-TR').format(it.avg_buy || 0)} TL</div>
+          <div style="font-size:0.95em; font-weight:bold; color:${(it.pnl || 0) >= 0 ? 'var(--success)' : 'var(--danger)'};">
+            Şu Anki Kar/Zarar: ${new Intl.NumberFormat('tr-TR').format(it.pnl || 0)} TL
+          </div>
+          <div style="font-weight:bold; color:var(--info)">Değer: ${new Intl.NumberFormat('tr-TR').format(it.value)} TL</div>
         </div>
       `).join('');
     };
     total.textContent = 'Toplam Değer: ' + new Intl.NumberFormat('tr-TR').format(data.total_value || 0) + ' TL';
+    const used = items.reduce((s, it) => s + Number(it.qty || 0), 0);
+    const cap = 1000;
+    const ratio = Math.min(100, Math.round((used / cap) * 100));
+    document.getElementById('capacity-text').textContent = `${used} / ${cap} kg`;
+    document.getElementById('capacity-bar').style.width = ratio + '%';
     document.getElementById('tab-raw').onclick = () => render('raw');
     document.getElementById('tab-finished').onclick = () => render('finished');
     render('raw');

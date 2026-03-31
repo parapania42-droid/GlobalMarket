@@ -4,48 +4,80 @@
 <div class="container main-game-area">
     <div class="card">
         <div class="card-header">
-            <h2>💰 Canlı Piyasa</h2>
-            <div class="hint-text">Fiyatlar tüm oyuncular için ortaktır ve arz-talebe göre değişir.</div>
+            <h2>💰 Pazar Yeri</h2>
+            <div class="hint-text">Buğday, Demir, Altın ve Teknoloji ürünlerini anlık trend ile takip edin.</div>
         </div>
-        <div id="price-list" class="inventory-grid"></div>
+        <div id="market-focus-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:12px;"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3>📰 Ekonomik Haberler</h3>
+        </div>
+        <div id="econ-news-list" class="hint-text">Haberler yükleniyor...</div>
     </div>
 </div>
 
 <script>
-let marketPricesTimer = null;
-let isPricesFetching = false;
-function arrow(change) {
-    if (change > 0.001) return '<span style="color:var(--danger)">↑</span>';
-    if (change < -0.001) return '<span style="color:var(--success)">↓</span>';
-    return '<span style="color:var(--warning)">•</span>';
+let isMarketLoading = false;
+function trendColor(trend) {
+    return trend === 'Yükselişte' ? 'var(--success)' : 'var(--danger)';
 }
-async function loadPrices() {
-    if (isPricesFetching) return;
-    isPricesFetching = true;
+async function quickTrade(action, item) {
+    const qtyRaw = prompt(`${item} için miktar girin`, '1');
+    const qty = parseInt(qtyRaw || '0', 10);
+    if (!qty || qty <= 0) return;
+    const endpoint = action === 'buy' ? '/api/market/quick_buy' : '/api/market/quick_sell';
     try {
-    const res = await fetch('/api/market/prices');
-    const data = await res.json();
-    const list = document.getElementById('price-list');
-    list.innerHTML = data.map(p => `
-        <div class="inventory-item" style="display:flex; justify-content:space-between;">
-            <div>${p.item}</div>
-            <div style="font-weight:bold">${new Intl.NumberFormat('tr-TR').format(p.price.toFixed ? p.price.toFixed(0) : p.price)} TL ${arrow(p.last_change)}</div>
-        </div>
-    `).join('');
-    } finally {
-        isPricesFetching = false;
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({item, qty})
+        });
+        const data = await res.json();
+        alert(data.message || (data.success ? 'İşlem başarılı' : 'İşlem başarısız'));
+        if (data.success) {
+            loadMarketOverview();
+        }
+    } catch (e) {
+        alert('Bağlantı hatası');
     }
 }
-document.addEventListener('DOMContentLoaded', () => {
-    loadPrices();
-    if (marketPricesTimer) clearInterval(marketPricesTimer);
-    marketPricesTimer = setInterval(loadPrices, 10000);
-});
-window.addEventListener('pagehide', () => {
-    if (marketPricesTimer) {
-        clearInterval(marketPricesTimer);
-        marketPricesTimer = null;
+async function loadMarketOverview() {
+    if (isMarketLoading) return;
+    isMarketLoading = true;
+    try {
+        const [marketRes, newsRes] = await Promise.all([
+            fetch('/api/market/overview'),
+            fetch('/api/news')
+        ]);
+        const items = marketRes.ok ? await marketRes.json() : [];
+        const news = newsRes.ok ? await newsRes.json() : [];
+        const grid = document.getElementById('market-focus-grid');
+        grid.innerHTML = items.map(it => `
+            <div class="card" style="background:linear-gradient(145deg, #1b1f2a, #11151f); border:1px solid #2b3548;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-weight:700; font-size:1.05em;">${it.label}</div>
+                    <div style="font-size:0.85em; color:${trendColor(it.trend)}">${it.trend}</div>
+                </div>
+                <div style="margin-top:8px; font-size:1.2em; font-weight:700; color:var(--warning);">
+                    ${new Intl.NumberFormat('tr-TR').format(it.price)} TL
+                </div>
+                <div style="margin-top:10px; display:flex; gap:8px;">
+                    <button class="btn btn-success btn-sm" onclick="quickTrade('buy','${it.item}')">Hızlı Al</button>
+                    <button class="btn btn-danger btn-sm" onclick="quickTrade('sell','${it.item}')">Hızlı Sat</button>
+                </div>
+            </div>
+        `).join('');
+
+        const econNews = document.getElementById('econ-news-list');
+        const headline = "Kuraklık nedeniyle buğday fiyatları arttı!";
+        const rows = news.slice(0, 5).map(n => `<div style="padding:8px 0; border-bottom:1px solid #2d2d2d;">• ${n.title}</div>`).join('');
+        econNews.innerHTML = `<div style="padding:8px 0; color:var(--warning);">• ${headline}</div>${rows || '<div>• Piyasa dengede, büyük dalga beklenmiyor.</div>'}`;
+    } finally {
+        isMarketLoading = false;
     }
-});
+}
+document.addEventListener('DOMContentLoaded', loadMarketOverview);
 </script>
 {% endblock %}

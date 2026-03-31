@@ -2,9 +2,17 @@
 
 {% block content %}
 <div class="container main-game-area">
+    <div class="card" style="background:linear-gradient(145deg, #151923, #10141d); border:1px solid #2c3446;">
+        <div class="card-header">
+            <h2>🏗️ Tesis Yatırımları</h2>
+            <div class="hint-text">Uzun vadeli büyüme için tesis satın al, geliştir ve üretimi büyüt.</div>
+        </div>
+        <div id="facility-showcase" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;"></div>
+    </div>
+
     <div class="card">
         <div class="card-header">
-            <h2>🏭 Fabrikalar</h2>
+            <h2>🏭 Tesis Yönetimi</h2>
             <div class="hint-text">Fabrika durumları, işçi atamaları ve üretim kontrolü.</div>
         </div>
         <div id="factory-list"></div>
@@ -27,6 +35,7 @@ async function loadFactories() {
       if (res.ok) data = await res.json();
     } catch (e) {}
     const list = document.getElementById('factory-list');
+    renderFacilityShowcase(data || []);
     if (!data || !data.length) {
       list.innerHTML = `
         <div style="padding:12px; border:1px dashed var(--border); border-radius:8px; margin-bottom:12px; text-align:center;">
@@ -138,6 +147,44 @@ async function loadFactories() {
         if (costEl) costEl.textContent = st.next_cost ? (new Intl.NumberFormat('tr-TR').format(st.next_cost)+' TL') : '-';
       } catch (_) {}
     });
+}
+
+function renderFacilityShowcase(factoryRows) {
+  const box = document.getElementById('facility-showcase');
+  if (!box) return;
+  const byType = {};
+  (factoryRows || []).forEach(f => { byType[f.type] = f; });
+  const featured = [
+    {
+      title: 'Güneş Paneli Tarlası',
+      fid: 'glass',
+      desc: 'Saniyede 0.5 Enerji üretir, bakım maliyeti düşüktür.'
+    },
+    {
+      title: 'Demir Madeni',
+      fid: 'iron',
+      desc: 'Saatlik 10 birim demir çıkarır, işçi maaşları bakiyeden düşer.'
+    },
+    {
+      title: 'Yazılım Ofisi',
+      fid: 'electronics',
+      desc: 'Teknoloji ürünleri geliştirir, yüksek kar marjı sağlar.'
+    }
+  ];
+  box.innerHTML = featured.map(f => {
+    const row = byType[f.fid] || { level: 0, build_cost: 0 };
+    return `
+      <div class="card" style="border:1px solid #2f3b52; background:#151b28;">
+        <div style="font-weight:700; margin-bottom:6px;">${f.title}</div>
+        <div style="font-size:0.9em; color:var(--text-muted); min-height:40px;">${f.desc}</div>
+        <div style="margin-top:8px; display:flex; justify-content:space-between;">
+          <span>Seviye: <strong>${row.level || 0}</strong></span>
+          <span>Maliyet: <strong>${new Intl.NumberFormat('tr-TR').format(row.build_cost || 0)} TL</strong></span>
+        </div>
+        <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="upgradeFactory('${f.fid}')">Upgrade</button>
+      </div>
+    `;
+  }).join('');
 }
 document.addEventListener('DOMContentLoaded', loadFactories);
 
