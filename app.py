@@ -13,6 +13,8 @@ from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import text, pool
+import sqlalchemy
+from sqlalchemy.pool import NullPool
 from flask_sqlalchemy import SQLAlchemy
 import re
 from urllib.parse import urlparse
@@ -137,20 +139,23 @@ def _ensure_engine():
     global _DB_ENGINE, _USE_PG
     if _DB_ENGINE is not None:
         return
-    db_url = os.environ.get("DATABASE_URL")
-    if db_url and db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    
+    # Veritabanı URL'sini Render için düzelt 
+    db_url = os.environ.get("DATABASE_URL") 
+    if db_url and db_url.startswith("postgres://"): 
+        db_url = db_url.replace("postgres://", "postgresql://", 1) 
     
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False 
     
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        "poolclass": pool.NullPool,
-        "connect_args": {
-            "sslmode": "require",
-            "connect_timeout": 10
-        }
-    }
+    # Bağlantı havuzunu tamamen kapat ve SSL zorla 
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = { 
+        "poolclass": NullPool, 
+        "connect_args": { 
+            "sslmode": "require" 
+        } 
+    } 
+    
     db.init_app(app)
     with app.app_context():
         _DB_ENGINE = db.engine
@@ -162,12 +167,9 @@ _ensure_engine()
 with app.app_context():
     db.create_all()
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    try:
-        db.session.remove()
-    except Exception:
-        pass
+@app.teardown_appcontext 
+def shutdown_session(exception=None): 
+    db.session.remove()
 
 @app.after_request
 def add_header(response):
