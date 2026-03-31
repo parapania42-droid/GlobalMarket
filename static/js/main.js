@@ -49,7 +49,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (path === '/leaderboard') {
         fetchLeaderboard();
     } else if (path === '/game') {
-        startPolling();
+        // startPolling() ve otomatik döngüler kaldırıldı. 
+        // Veriler sadece sayfa yüklendiğinde bir kez çekilecek.
+        updateAll();
         
         // Bind Enter key for chat
         const chatInput = document.getElementById('chat-input');
@@ -62,12 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchPricesHome();
         fetchNewsHome();
         fetchLeaderboardHome();
-        if (homePricesInterval) clearInterval(homePricesInterval);
-        if (homeNewsInterval) clearInterval(homeNewsInterval);
-        if (homeLeaderboardInterval) clearInterval(homeLeaderboardInterval);
-        // homePricesInterval = setInterval(fetchPricesHome, 10000);
-        // homeNewsInterval = setInterval(fetchNewsHome, 60000);
-        // homeLeaderboardInterval = setInterval(fetchLeaderboardHome, 15000);
     } 
 });
 
@@ -133,60 +129,8 @@ async function register() {
 }
 
 // ---------------------------------------------------------
-// CORE GAME LOOP
+// CORE GAME (MANUAL REFRESH ONLY)
 // ---------------------------------------------------------
-
-let pollingInterval = null;
-let chatInterval = null;
-let localTimerInterval = null;
-let homePricesInterval = null;
-let homeNewsInterval = null;
-let homeLeaderboardInterval = null;
-
-function clearAllIntervalsHard() {
-    // Safety net: clear any interval left behind by page scripts.
-    for (let id = 1; id <= 20000; id += 1) {
-        clearInterval(id);
-    }
-}
-
-function startPolling() {
-    stopPolling();
-    updateAll();
-    // pollingInterval = setInterval(updateAll, 5000);
-    // chatInterval = setInterval(fetchChat, 5000);
-    fetchChat();
-    // localTimerInterval = setInterval(updateLocalTimers, 1000);
-}
-
-function stopPolling() {
-    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
-    if (chatInterval) { clearInterval(chatInterval); chatInterval = null; }
-    if (localTimerInterval) { clearInterval(localTimerInterval); localTimerInterval = null; }
-    if (homePricesInterval) { clearInterval(homePricesInterval); homePricesInterval = null; }
-    if (homeNewsInterval) { clearInterval(homeNewsInterval); homeNewsInterval = null; }
-    if (homeLeaderboardInterval) { clearInterval(homeLeaderboardInterval); homeLeaderboardInterval = null; }
-    if (__eventTimer) { clearInterval(__eventTimer); __eventTimer = null; }
-    if (__factoryModalTimer) { clearInterval(__factoryModalTimer); __factoryModalTimer = null; }
-    clearAllIntervalsHard();
-}
-
-window.addEventListener('beforeunload', stopPolling);
-window.addEventListener('pagehide', stopPolling);
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-        stopPolling();
-    }
-});
-document.addEventListener('click', (event) => {
-    const link = event.target.closest('a[href]');
-    if (!link) return;
-    const href = (link.getAttribute('href') || '').trim();
-    if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
-    if (href.startsWith('/') || href.startsWith(window.location.origin)) {
-        stopPolling();
-    }
-});
 
 async function updateAll() {
     if (__isUpdatingAll) return;
@@ -197,6 +141,7 @@ async function updateAll() {
             fetchUserData()
         ]);
         fetchEconomyStats();
+        fetchChat();
     } catch (e) {
         console.error("Update failed:", e);
     } finally {

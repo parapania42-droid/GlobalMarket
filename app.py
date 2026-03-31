@@ -85,10 +85,6 @@ def _reset_db():
 
 # _reset_db() # Uncomment this line to reset database on next run
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    db.session.remove()
-
 def _normalize_username(username: str) -> str:
     if username is None:
         return ""
@@ -106,11 +102,16 @@ def _find_username_ci(username: str):
         conn.close()
 
 def _normalize_db_url(url: str) -> str:
+    if not url:
+        return url
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+psycopg2://", 1)
-    if "sslmode=" not in url and ("postgresql" in url or "postgres" in url):
-        sep = "&" if "?" in url else "?"
-        url += f"{sep}sslmode=require"
+    
+    # Ensure sslmode=require is present for Postgres
+    if "postgresql" in url or "postgres" in url:
+        if "sslmode=" not in url:
+            sep = "&" if "?" in url else "?"
+            url += f"{sep}sslmode=require"
     return url
 
 class MarketplaceProduct(db.Model):
@@ -151,8 +152,8 @@ def _ensure_engine():
     if _USE_PG:
         connect_args["sslmode"] = "require"
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        "pool_size": 5, 
-        "max_overflow": 10, 
+        "pool_size": 3, 
+        "max_overflow": 0, 
         "pool_timeout": 30, 
         "pool_recycle": 1800, 
         "pool_pre_ping": True,
@@ -1066,9 +1067,9 @@ def login_page():
         if not check_password_hash(row['password_hash'], password):
             return jsonify({"success": False, "message": "Şifre hatalı"})
 
-        session.clear() # Mevcut misafir session'ı temizle
-        session['user_id'] = row['username']
+        # Giriş başarılı: Session ata
         session.permanent = True
+        session['user_id'] = row['username']
         return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
     except Exception as e:
         print(f"Login error: {e}")
@@ -1096,9 +1097,9 @@ def register():
         return jsonify({"success": False, "message": "Kullanıcı adı kullanımda"})
     
     if create_user(username, password):
-        session.clear()
-        session['user_id'] = username
+        # Register başarılı olduğunda session set et ve yönlendir
         session.permanent = True
+        session['user_id'] = username
         return jsonify({"success": True, "message": "Kayıt başarılı! Hoş geldiniz.", "redirect": "/game"})
     return jsonify({"success": False, "message": "Kayıt sırasında teknik bir hata oluştu"})
 
