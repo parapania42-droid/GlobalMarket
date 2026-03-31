@@ -107,7 +107,10 @@ def _find_username_ci(username: str):
 
 def _normalize_db_url(url: str) -> str:
     if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if "sslmode=" not in url and ("postgresql" in url or "postgres" in url):
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}sslmode=require"
     return url
 
 class MarketplaceProduct(db.Model):
@@ -144,7 +147,17 @@ def _ensure_engine():
         app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
         _USE_PG = False
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_size": 5, "max_overflow": 10, "pool_timeout": 30, "pool_recycle": 1800, "pool_pre_ping": True}
+    connect_args = {}
+    if _USE_PG:
+        connect_args["sslmode"] = "require"
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        "pool_size": 5, 
+        "max_overflow": 10, 
+        "pool_timeout": 30, 
+        "pool_recycle": 1800, 
+        "pool_pre_ping": True,
+        "connect_args": connect_args
+    }
     db.init_app(app)
     from flask import current_app
     with app.app_context():
@@ -1071,6 +1084,9 @@ def register():
         return jsonify({"success": False, "message": "Kullanıcı adı kullanımda"})
     
     if create_user(username, password):
+        # Kayıt sonrası veritabanını sağlamlaştır
+        with app.app_context():
+            db.create_all()
         return jsonify({"success": True, "message": "Kayıt başarılı! Giriş yapabilirsiniz."})
     return jsonify({"success": False, "message": "Kayıt başarısız"})
 
@@ -1100,14 +1116,25 @@ def guide_page():
 
 @app.route('/market')
 def market_page():
-    return render_template('market.html', active_page='market')
+    # Mock data for demonstration
+    market_items = [
+        {"id": 1, "name": "Buğday", "price": 15, "stock": 100, "icon": "🌾"},
+        {"id": 2, "name": "Demir", "price": 100, "stock": 50, "icon": "⛓️"},
+        {"id": 3, "name": "Altın", "price": 5000, "stock": 10, "icon": "💰"}
+    ]
+    return render_template('market.html', active_page='market', items=market_items)
     
 @app.route('/marketplace')
 def marketplace_page():
     return render_template('marketplace.html', active_page='market')
 @app.route('/factory')
 def factory_page():
-    return render_template('factory.html', active_page='factory')
+    # Mock factory options for demonstration
+    available_factories = [
+        {"id": "solar", "name": "Güneş Paneli", "cost": 5000, "rate": 2, "icon": "☀️"},
+        {"id": "iron_mine", "name": "Demir Madeni", "cost": 2000, "rate": 3, "icon": "⛏️"}
+    ]
+    return render_template('factory.html', active_page='factory', factories=available_factories)
 
 @app.route('/resources')
 def resources_page():
@@ -1119,7 +1146,12 @@ def land_page():
 
 @app.route('/inventory')
 def inventory_page():
-    return render_template('inventory.html', active_page='inventory')
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    u = get_user(session['user_id'])
+    if not u:
+        return redirect(url_for('login_page'))
+    return render_template('inventory.html', active_page='inventory', inventory=u.get('inventory', {}))
 
 @app.route('/logistics')
 def logistics_page():

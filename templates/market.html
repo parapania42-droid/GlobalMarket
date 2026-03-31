@@ -7,7 +7,22 @@
             <h2>💰 Pazar Yeri</h2>
             <div class="hint-text">Buğday, Demir, Altın ve Teknoloji ürünlerini anlık trend ile takip edin.</div>
         </div>
-        <div id="market-focus-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:12px;"></div>
+        <div id="market-focus-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:12px;">
+            {% for item in items %}
+            <div class="card" style="background:linear-gradient(145deg, #1b1f2a, #11151f); border:1px solid #2b3548;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-weight:700; font-size:1.1em;">{{ item.icon }} {{ item.name }}</div>
+                    <div style="font-size:0.85em; color:var(--success)">Stok: {{ item.stock }}</div>
+                </div>
+                <div style="margin-top:12px; font-size:1.3em; font-weight:700; color:var(--warning);">
+                    {{ "{:,.0f}".format(item.price).replace(",", ".") }} TL
+                </div>
+                <div style="margin-top:15px; display:flex; gap:8px;">
+                    <button class="btn btn-success btn-sm w-100" onclick="quickTrade('buy','{{ item.name }}')">Satın Al</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
 
     <div class="card">

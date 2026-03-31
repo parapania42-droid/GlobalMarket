@@ -23,7 +23,30 @@
       <button id="tab-finished" class="btn btn-sm btn-secondary">Bitmiş Ürünler</button>
     </div>
 
-    <div id="inventory-cards" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px;"></div>
+    <div id="inventory-cards" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">
+      {% if inventory %}
+      <table style="width:100%; border-collapse: collapse; margin-top:20px;">
+        <thead>
+          <tr style="border-bottom: 2px solid #2b3548; text-align: left;">
+            <th style="padding: 12px;">Ürün</th>
+            <th style="padding: 12px;">Miktar</th>
+            <th style="padding: 12px;">Birim Değer (Tahmini)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item, qty in inventory.items() %}
+          <tr style="border-bottom: 1px solid #1b1f2a;">
+            <td style="padding: 12px; font-weight: bold;">{{ item }}</td>
+            <td style="padding: 12px;">{{ qty }} adet</td>
+            <td style="padding: 12px; color: var(--success);">{{ "{:,.0f}".format(qty * 50).replace(",", ".") }} TL</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="hint-text" style="grid-column: 1 / -1; padding:20px; text-align:center;">Henüz envanterinizde ürün bulunmuyor.</div>
+      {% endif %}
+    </div>
   </div>
 </div>
 

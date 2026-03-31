@@ -7,7 +7,19 @@
             <h2>🏗️ Tesis Yatırımları</h2>
             <div class="hint-text">Uzun vadeli büyüme için tesis satın al, geliştir ve üretimi büyüt.</div>
         </div>
-        <div id="facility-showcase" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;"></div>
+        <div id="facility-showcase" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+            {% for factory in factories %}
+            <div class="card" style="background:linear-gradient(145deg, #1b1f2a, #11151f); border:1px solid #2b3548; padding: 15px;">
+                <div style="font-size: 2em; margin-bottom: 10px;">{{ factory.icon }}</div>
+                <h3 style="margin-bottom: 5px;">{{ factory.name }}</h3>
+                <div style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 12px;">
+                    Üretim Hızı: {{ factory.rate }} birim/saat<br>
+                    Kurulum Maliyeti: {{ "{:,.0f}".format(factory.cost).replace(",", ".") }} TL
+                </div>
+                <button class="btn btn-primary btn-sm w-100" onclick="alert('{{ factory.name }} kurulumu yakında eklenecek!')">Tesis Kur</button>
+            </div>
+            {% endfor %}
+        </div>
     </div>
 
     <div class="card">
