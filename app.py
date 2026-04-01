@@ -25,12 +25,21 @@ STARTING_MONEY = 5000
 app = Flask(__name__)
 app.secret_key = "globalmarket_fixed_secret_key"
 app.config["SESSION_PERMANENT"] = False
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 app.config.update(
     SESSION_COOKIE_SECURE=False,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax"
 )
+
+# SQLAlchemy engine options as config (This is the standard way)
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "poolclass": sqlalchemy.pool.NullPool,
+    "connect_args": {
+        "sslmode": "require",
+        "connect_timeout": 10
+    }
+}
 
 # Concurrency lock
 lock = threading.Lock()
@@ -70,51 +79,30 @@ FACTORY_CONFIG = {
 }
 
 # ---------------------------------------------------------
-# DATABASE
+# DATABASE CONFIGURATION
 # ---------------------------------------------------------
-
-_DB_ENGINE = None
-_USE_PG = False
-db = SQLAlchemy()
-
-# TEMPORARY DB RESET (Remove after first run)
-def _reset_db():
-    base_dir = os.path.abspath(os.path.dirname(__file__))
-    db_path = os.path.join(base_dir, "globalmarket.db")
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        print("Database file deleted for reset.")
-
-# _reset_db() # Uncomment this line to reset database on next run
-
-def _normalize_username(username: str) -> str:
-    if username is None:
-        return ""
-    return str(username).strip()
-
-def _find_username_ci(username: str):
-    uname = _normalize_username(username)
-    if not uname:
-        return None
-    conn = get_db_connection()
-    try:
-        row = conn.execute('SELECT username FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1', (uname,)).fetchone()
-        return row['username'] if row else None
-    finally:
-        conn.close()
 
 def _normalize_db_url(url: str) -> str:
     if not url:
         return url
     if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
-    
-    # Ensure sslmode=require is present for Postgres
-    if "postgresql" in url or "postgres" in url:
-        if "sslmode=" not in url:
-            sep = "&" if "?" in url else "?"
-            url += f"{sep}sslmode=require"
+        url = url.replace("postgres://", "postgresql://", 1)
+    if "sslmode=" not in url:
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}sslmode=require"
     return url
+
+db = SQLAlchemy()
+
+db_url = os.environ.get("DATABASE_URL")
+app.config['SQLALCHEMY_DATABASE_URI'] = _normalize_db_url(db_url) or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+
+# ---------------------------------------------------------
+# DATABASE MODELS
+# ---------------------------------------------------------
 
 class MarketplaceProduct(db.Model):
     __tablename__ = 'marketplace_products'
@@ -135,72 +123,52 @@ class FactoryRow(db.Model):
     level = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.Float, nullable=False)
 
-def _ensure_engine():
-    global _DB_ENGINE, _USE_PG
-    if _DB_ENGINE is not None:
-        return
-    
-    # Veritabanı URL'sini Render için düzelt ve SSL zorla
-    db_url = os.environ.get("DATABASE_URL") 
-    if db_url:
-        if db_url.startswith("postgres://"): 
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-        if "sslmode=" not in db_url:
-            sep = "&" if "?" in db_url else "?"
-            db_url += f"{sep}sslmode=require"
-    
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False 
-    
-    # Bağlantı havuzunu tamamen kapat ve SSL zorla 
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = { 
-        "poolclass": sqlalchemy.pool.NullPool, 
-        "connect_args": { 
-            "sslmode": "require" 
-        } 
-    } 
-    
-    db.init_app(app)
-    with app.app_context():
-        _DB_ENGINE = db.engine
-        db.create_all()
-# Force engine and tables init at import time
-_ensure_engine()
-
-# Ensure all SQLAlchemy tables exist (Render/Gunicorn safe)
+# Ensure tables exist
 with app.app_context():
     db.create_all()
 
-@app.teardown_appcontext 
-def shutdown_session(exception=None): 
-    db.session.remove()
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    try:
+        db.session.remove()
+        # Also dispose engine connections to be absolutely sure
+        db.engine.dispose()
+    except Exception:
+        pass
 
 @app.after_request
-def add_header(response):
-    db.session.remove()
+def cleanup_connections(response):
+    try:
+        db.session.remove()
+    except Exception:
+        pass
     return response
 
-@app.teardown_request
-def _shutdown_request_session(exception=None):
+# ---------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------
+
+def _normalize_username(username: str) -> str:
+    if username is None:
+        return ""
+    return str(username).strip()
+
+def _find_username_ci(username: str):
+    uname = _normalize_username(username)
+    if not uname:
+        return None
     try:
-        if exception is None:
-            db.session.commit()
-        else:
-            db.session.rollback()
+        # Use db.session.execute for safety
+        row = db.session.execute(text('SELECT username FROM users WHERE LOWER(username) = LOWER(:u) LIMIT 1'), {"u": uname}).fetchone()
+        if row:
+            db.session.commit() # Release the transaction
+            return row[0]
+        return None
     except Exception:
-        try:
-            db.session.rollback()
-        except Exception:
-            pass
+        db.session.rollback()
+        return None
     finally:
-        try:
-            db.session.close()
-        except Exception:
-            pass
-        try:
-            db.session.remove()
-        except Exception:
-            pass
+        db.session.remove()
 
 class _DictRow:
     def __init__(self, mapping):
@@ -220,11 +188,32 @@ class _DictRow:
 
 class _SAResultWrapper:
     def __init__(self, result):
-        rows = result.fetchall()
         self._rows = []
-        for r in rows:
-            mapping = getattr(r, "_mapping", None)
-            self._rows.append(_DictRow(mapping if mapping is not None else dict(r)))
+        if result is None:
+            return
+        try:
+            # IMMEDIATELY fetch all to release the connection back to the NullPool
+            rows = result.fetchall()
+            for r in rows:
+                mapping = getattr(r, "_mapping", None)
+                if mapping is not None:
+                    self._rows.append(_DictRow(mapping))
+                else:
+                    try:
+                        self._rows.append(_DictRow(dict(r)))
+                    except Exception:
+                        try:
+                            self._rows.append(_DictRow({k: v for k, v in r.items()}))
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f"Result Wrapper Error: {e}")
+        finally:
+            try:
+                # Explicitly close the result set
+                result.close()
+            except Exception:
+                pass
     def fetchall(self):
         return list(self._rows)
     def fetchone(self):
@@ -247,9 +236,8 @@ def _convert_qmarks(sql: str, params):
     return "".join(out), bind
 
 class _SAConnection:
-    def __init__(self, engine):
-        self._conn = engine.connect()
-        self._trans = None
+    def __init__(self, session):
+        self._session = session
         self._closed = False
     def cursor(self):
         return self
@@ -260,47 +248,34 @@ class _SAConnection:
             sql_conv, bind = sql, params
         else:
             sql_conv, bind = sql, {}
-        res = self._conn.execute(text(sql_conv), bind)
-        # Auto-commit write statements so pooled connections don't keep open transactions.
-        stmt = str(sql_conv).lstrip().upper()
-        if stmt.startswith(("INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "REPLACE")):
-            try:
-                self._conn.commit()
-            except Exception:
-                pass
         try:
+            res = self._session.execute(text(sql_conv), bind)
+            # Auto-commit for write operations to maintain legacy behavior
+            stmt = str(sql_conv).lstrip().upper()
+            if stmt.startswith(("INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "REPLACE")):
+                self._session.commit()
             return _SAResultWrapper(res)
-        except Exception:
-            return _SAResultWrapper(res)
+        except Exception as e:
+            print(f"DB Error: {e}")
+            return _SAResultWrapper(None)
     def commit(self):
         try:
-            self._conn.commit()
+            self._session.commit()
         except Exception:
             pass
     def close(self):
-        try:
-            self._conn.close()
-            self._closed = True
-        except Exception:
-            pass
+        # We don't close the session here, it's handled by teardown_appcontext
+        self._closed = True
     def __enter__(self):
         return self
     def __exit__(self, exc_type, exc, tb):
-        self.close()
+        pass # Handled by teardown
     def __del__(self):
-        try:
-            if not getattr(self, "_closed", True):
-                self._conn.close()
-        except Exception:
-            pass
+        pass
 
 def get_db_connection():
-    _ensure_engine()
-    if not _USE_PG:
-        # Provide sqlite3-compatible connection when using SQLite via SQLAlchemy
-        # so row usage remains consistent
-        return _SAConnection(_DB_ENGINE)
-    return _SAConnection(_DB_ENGINE)
+    # Use the scoped session instead of opening new engine connections
+    return _SAConnection(db.session)
 
 def _repo_cfg():
     repo = os.environ.get("GITHUB_REPO", "").strip()
@@ -820,55 +795,63 @@ start_bot_sellers()
 
 def get_user(username):
     uname = _normalize_username(username)
-    conn = get_db_connection()
     try:
-        user = conn.execute('SELECT * FROM users WHERE username = ?', (uname,)).fetchone()
+        user = db.session.execute(text('SELECT * FROM users WHERE username = :u'), {"u": uname}).fetchone()
         if not user and uname:
-            user = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1', (uname,)).fetchone()
+            user = db.session.execute(text('SELECT * FROM users WHERE LOWER(username) = LOWER(:u) LIMIT 1'), {"u": uname}).fetchone()
+        
+        if user:
+            # SQLAlchemy row to dict mapping
+            mapping = getattr(user, "_mapping", None)
+            u_row = dict(mapping) if mapping else dict(user)
+            u_data = json.loads(u_row['data'])
+            db_username = u_row['username']
+            u_data['username'] = db_username
+            
+            # Migration/Repair for missing keys
+            if "inventory" not in u_data: u_data["inventory"] = {}
+            # Ensure inventory keys exist
+            for k in ["Odun","Taş","Demir","Çelik","Plastik","Elektronik","Gıda","Tekstil"]:
+                u_data["inventory"][k] = u_data["inventory"].get(k, 0)
+            if "factories" not in u_data: u_data["factories"] = {}
+            if "factory_storage" not in u_data: u_data["factory_storage"] = {}
+            if "factory_last_update" not in u_data: u_data["factory_last_update"] = {}
+            if "factory_last_collect" not in u_data: u_data["factory_last_collect"] = {}
+            if "factory_run_start" not in u_data: u_data["factory_run_start"] = {}
+            if "factory_run_duration" not in u_data: u_data["factory_run_duration"] = {}
+            if "net_worth" not in u_data: u_data["net_worth"] = 0
+            if "xp" not in u_data: u_data["xp"] = 0
+            if "level" not in u_data: u_data["level"] = 1
+            if "money" not in u_data: u_data["money"] = STARTING_MONEY
+            try:
+                u_data["money"] = max(0, int(u_data.get("money", STARTING_MONEY)))
+            except Exception:
+                u_data["money"] = STARTING_MONEY
+            if "workers_available" not in u_data: u_data["workers_available"] = 0
+            if "avg_buy_prices" not in u_data: u_data["avg_buy_prices"] = {}
+            if "council_member" not in u_data: u_data["council_member"] = (db_username.lower() == "konsey")
+            
+            db.session.commit()
+            return u_data
+    except Exception as e:
+        print(f"get_user error: {e}")
+        db.session.rollback()
     finally:
-        conn.close()
-    if user:
-        u_data = json.loads(user['data'])
-        db_username = user['username']
-        u_data['username'] = db_username
-        
-        # Migration/Repair for missing keys
-        if "inventory" not in u_data: u_data["inventory"] = {}
-        # Ensure inventory keys exist
-        for k in ["Odun","Taş","Demir","Çelik","Plastik","Elektronik","Gıda","Tekstil"]:
-            u_data["inventory"][k] = u_data["inventory"].get(k, 0)
-        if "factories" not in u_data: u_data["factories"] = {}
-        if "factory_storage" not in u_data: u_data["factory_storage"] = {}
-        if "factory_last_update" not in u_data: u_data["factory_last_update"] = {}
-        if "factory_last_collect" not in u_data: u_data["factory_last_collect"] = {}
-        if "factory_run_start" not in u_data: u_data["factory_run_start"] = {}
-        if "factory_run_duration" not in u_data: u_data["factory_run_duration"] = {}
-        if "net_worth" not in u_data: u_data["net_worth"] = 0
-        if "xp" not in u_data: u_data["xp"] = 0
-        if "level" not in u_data: u_data["level"] = 1
-        if "money" not in u_data: u_data["money"] = STARTING_MONEY
-        try:
-            u_data["money"] = max(0, int(u_data.get("money", STARTING_MONEY)))
-        except Exception:
-            u_data["money"] = STARTING_MONEY
-        if "workers_available" not in u_data: u_data["workers_available"] = 0
-        if "avg_buy_prices" not in u_data: u_data["avg_buy_prices"] = {}
-        if "council_member" not in u_data: u_data["council_member"] = (db_username.lower() == "konsey")
-        
-        return u_data
+        db.session.remove()
     return None
 
 def save_user(user_data):
     username = user_data['username']
-    conn = get_db_connection()
-    conn.execute('UPDATE users SET data = ? WHERE username = ?', 
-                 (json.dumps(user_data), username))
-    conn.commit()
-    conn.close()
     try:
+        db.session.execute(text('UPDATE users SET data = :d WHERE username = :u'), 
+                     {"d": json.dumps(user_data), "u": username})
+        db.session.commit()
         backup_database()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"save_user error: {e}")
+        db.session.rollback()
+    finally:
+        db.session.remove()
 
 def create_user(username, password):
     username = _normalize_username(username)
@@ -906,29 +889,25 @@ def create_user(username, password):
         "workers_available": 0
     }
     
-    conn = get_db_connection()
     try:
-        conn.execute('INSERT INTO users (username, password_hash, data) VALUES (?, ?, ?)',
-                     (username, pw_hash, json.dumps(initial_data)))
+        db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
+                     {"u": username, "p": pw_hash, "d": json.dumps(initial_data)})
         # assign stable user_id
-        row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
-        next_id = int(row['m']) + 1 if row and row['m'] else 1
-        conn.execute('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (?, ?)', (username, next_id))
-        conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (next_id, 'register', 0, time.time()))
-        conn.commit()
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
+        row = db.session.execute(text('SELECT MAX(user_id) AS m FROM user_ids')).fetchone()
+        next_id = int(row[0]) + 1 if row and row[0] is not None else 1
+        db.session.execute(text('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (:u, :id)'), 
+                     {"u": username, "id": next_id})
+        db.session.execute(text('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (:id, :a, :am, :t)'), 
+                     {"id": next_id, "a": 'register', "am": 0, "t": time.time()})
+        db.session.commit()
+        backup_database()
+        return True
+    except Exception as e:
+        print(f"create_user error: {e}")
+        db.session.rollback()
         return False
     finally:
-        conn.close()
-    try:
-        backup_database()
-    except Exception:
-        pass
-    return True
+        db.session.remove()
 
 # ---------------------------------------------------------
 # USER ID & LOG HELPERS
