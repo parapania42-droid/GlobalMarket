@@ -34,11 +34,7 @@ app.config.update(
 
 # SQLAlchemy engine options as config (Optimized for speed)
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "pool_size": 5,
-    "max_overflow": 10,
-    "pool_timeout": 30,
-    "pool_pre_ping": True,
-    "pool_recycle": 1800,
+    "poolclass": sqlalchemy.pool.NullPool,
     "connect_args": {
         "sslmode": "require",
         "connect_timeout": 10
@@ -244,14 +240,39 @@ def _backfill_user_ids():
 
 _backfill_user_ids()
 
-def create_admin_if_not_exists()
+def create_admin_if_not_exists():
+    with app.app_context():
+        try:
+            row = db.session.execute(text('SELECT username, data FROM users WHERE username = :u'), {"u": 'Paramen42'}).fetchone()
+            if not row:
+                pw_hash = generate_password_hash('admin123')
+                initial_data = {
+                    "username": "Paramen42",
+                    "money": 0,
+                    "level": 1,
+                    "xp": 0,
+                    "inventory": {},
+                    "factories": {},
+                    "is_admin": True,
+                    "last_active": time.time()
+                }
+                db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
+                             {"u": 'Paramen42', "p": pw_hash, "d": json.dumps(initial_data)})
+                
+                max_id_row = db.session.execute(text('SELECT MAX(user_id) FROM user_ids')).fetchone()
+                next_id = (max_id_row[0] or 0) + 1
+                db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id)'), {"u": 'Paramen42', "id": next_id})
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+create_admin_if_not_exists()
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     try:
         db.session.remove()
-        # Dispose only if not using pool
-        if app.config['SQLALCHEMY_ENGINE_OPTIONS'].get('poolclass') == sqlalchemy.pool.NullPool:
+        if app.config.get('SQLALCHEMY_ENGINE_OPTIONS', {}).get('poolclass') == sqlalchemy.pool.NullPool:
             db.engine.dispose()
     except Exception:
         pass
