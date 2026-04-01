@@ -32,9 +32,13 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax"
 )
 
-# SQLAlchemy engine options as config (This is the standard way)
+# SQLAlchemy engine options as config (Optimized for speed)
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "poolclass": sqlalchemy.pool.NullPool,
+    "pool_size": 5,
+    "max_overflow": 10,
+    "pool_timeout": 30,
+    "pool_pre_ping": True,
+    "pool_recycle": 1800,
     "connect_args": {
         "sslmode": "require",
         "connect_timeout": 10
@@ -123,16 +127,132 @@ class FactoryRow(db.Model):
     level = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.Float, nullable=False)
 
-# Ensure tables exist
-with app.app_context():
-    db.create_all()
+# ---------------------------------------------------------
+# DATABASE INITIALIZATION
+# ---------------------------------------------------------
+
+def init_db():
+    with app.app_context():
+        try:
+            # First ensure tables are created via SQLAlchemy models
+            db.create_all()
+            
+            # Then perform manual migrations/backfills if needed
+            restore_database_if_needed()
+            
+            # Using raw SQL for some complex table definitions not in models
+            # but doing it safely within context
+            conn = db.engine.connect()
+            try:
+                # Stable user id mapping table
+                conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS user_ids (
+                        username TEXT PRIMARY KEY,
+                        user_id INTEGER UNIQUE
+                    )
+                '''))
+                # User logs table
+                conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS user_logs (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER,
+                        action TEXT,
+                        amount REAL,
+                        timestamp REAL
+                    )
+                '''))
+                
+                # Market table
+                conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS market (
+                        id SERIAL PRIMARY KEY,
+                        satici TEXT,
+                        item TEXT,
+                        adet INTEGER,
+                        fiyat INTEGER,
+                        time REAL
+                    )
+                '''))
+                
+                # Chat table
+                conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS chat (
+                        id SERIAL PRIMARY KEY,
+                        username TEXT,
+                        message TEXT,
+                        time TEXT
+                    )
+                '''))
+                
+                # Global Prices table
+                conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS prices (
+                        item TEXT PRIMARY KEY,
+                        price REAL NOT NULL,
+                        last_change REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                '''))
+                
+                # System State table
+                conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS system_state (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                '''))
+
+                # Seed default prices if empty
+                items = ["Odun","Taş","Demir","Kömür","Buğday","Çelik","Plastik","Elektronik"]
+                base_prices = {
+                    "Odun": 20, "Taş": 25, "Demir": 100, "Kömür": 40, "Buğday": 15,
+                    "Çelik": 300, "Plastik": 200, "Elektronik": 800
+                }
+                for it in items:
+                    conn.execute(text('INSERT INTO prices (item, price, last_change, updated_at) VALUES (:i, :p, 0.0, :t) ON CONFLICT (item) DO NOTHING'),
+                              {"i": it, "p": base_prices[it], "t": time.time()})
+                
+                conn.commit()
+            finally:
+                conn.close()
+                
+            print("Database initialized successfully.")
+        except Exception as e:
+            print(f"Database initialization failed: {e}")
+
+# Call init_db within context
+init_db()
+
+def _backfill_user_ids():
+    with app.app_context():
+        try:
+            # Simplified backfill using db.session
+            rows = db.session.execute(text('SELECT username FROM users')).fetchall()
+            max_id_row = db.session.execute(text('SELECT MAX(user_id) FROM user_ids')).fetchone()
+            next_id = (max_id_row[0] or 0) + 1
+            
+            for r in rows:
+                un = r[0]
+                exists = db.session.execute(text('SELECT 1 FROM user_ids WHERE username = :u'), {"u": un}).fetchone()
+                if not exists:
+                    db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id)'), {"u": un, "id": next_id})
+                    next_id += 1
+            db.session.commit()
+        except Exception as e:
+            print(f"Backfill error: {e}")
+            db.session.rollback()
+
+_backfill_user_ids()
+
+def create_admin_if_not_exists()
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     try:
         db.session.remove()
-        # Also dispose engine connections to be absolutely sure
-        db.engine.dispose()
+        # Dispose only if not using pool
+        if app.config['SQLALCHEMY_ENGINE_OPTIONS'].get('poolclass') == sqlalchemy.pool.NullPool:
+            db.engine.dispose()
     except Exception:
         pass
 
@@ -275,414 +395,34 @@ class _SAConnection:
 
 def get_db_connection():
     # Use the scoped session instead of opening new engine connections
-    return _SAConnection(db.session)
-
-def _repo_cfg():
-    repo = os.environ.get("GITHUB_REPO", "").strip()
-    branch = os.environ.get("GITHUB_BRANCH", "main").strip()
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-    return repo, branch, token
-
-def restore_database_if_needed():
-    base_dir = os.path.abspath(os.path.dirname(__file__))
-    db_path = os.path.join(base_dir, "globalmarket.db")
-    needs_restore = True
-    try:
-        if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
-            needs_restore = False
-    except Exception:
-        needs_restore = True
-    if not needs_restore:
-        return
-    repo, branch, token = _repo_cfg()
-    restored = False
-    if repo:
+    return _SAConnection(db.session):
+    with app.app_context():
         try:
-            url = f"https://api.github.com/repos/{repo}/contents/backup/globalmarket.db?ref={branch}"
-            headers = {"Accept": "application/vnd.github+json"}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req) as resp:
-                data = resp.read().decode("utf-8")
-                j = json.loads(data)
-                content_b64 = j.get("content", "").replace("\n", "")
-                if content_b64:
-                    raw = base64.b64decode(content_b64)
-                    with open(db_path, "wb") as f:
-                        f.write(raw)
-                    print("Database restored from GitHub backup")
-                    restored = True
-        except Exception:
-            restored = False
-    if not restored:
-        try:
-            backup_path = os.path.join(base_dir, "backup", "globalmarket.db")
-            if os.path.exists(backup_path) and os.path.getsize(backup_path) > 0:
-                shutil.copyfile(backup_path, db_path)
-                print("Database restored from GitHub backup")
-        except Exception:
-            pass
+            row = db.session.execute(text('SELECT username, data FROM users WHERE username = :u'), {"u": 'Paramen42'}).fetchone()
+            if not row:
+                pw_hash = generate_password_hash('admin123')
+                initial_data = {
+                    "username": "Paramen42",
+                    "money": 0,
+                    "level": 1,
+                    "xp": 0,
+                    "inventory": {},
+                    "factories": {},
+                    "is_admin": True,
+                    "last_active": time.time()
+                }
+                db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
+                             {"u": 'Paramen42', "p": pw_hash, "d": json.dumps(initial_data)})
+                
+                max_id_row = db.session.execute(text('SELECT MAX(user_id) FROM user_ids')).fetchone()
+                next_id = (max_id_row[0] or 0) + 1
+                db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id)'), {"u": 'Paramen42', "id": next_id})
+                db.session.commit()
+                print("Admin user created.")
+        except Exception as e:
+            print(f"Admin creation error: {e}")
+            db.session.rollback()
 
-def backup_database():
-    base_dir = os.path.abspath(os.path.dirname(__file__))
-    db_path = os.path.join(base_dir, "globalmarket.db")
-    backup_dir = os.path.join(base_dir, "backup")
-    ts_file = os.path.join(backup_dir, ".last_backup")
-    try:
-        if not os.path.exists(db_path) or os.path.getsize(db_path) <= 0:
-            return
-    except Exception:
-        return
-    os.makedirs(backup_dir, exist_ok=True)
-    try:
-        if os.path.exists(ts_file):
-            last_ts = os.path.getmtime(ts_file)
-            if time.time() - last_ts < 120:
-                return
-    except Exception:
-        pass
-    try:
-        shutil.copyfile(db_path, os.path.join(backup_dir, "globalmarket.db"))
-    except Exception:
-        return
-    repo, branch, token = _repo_cfg()
-    pushed = False
-    if repo and token:
-        try:
-            get_url = f"https://api.github.com/repos/{repo}/contents/backup/globalmarket.db?ref={branch}"
-            headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"}
-            sha = None
-            try:
-                req = urllib.request.Request(get_url, headers=headers)
-                with urllib.request.urlopen(req) as resp:
-                    j = json.loads(resp.read().decode("utf-8"))
-                    sha = j.get("sha")
-            except urllib.error.HTTPError:
-                sha = None
-            with open(db_path, "rb") as f:
-                content_b64 = base64.b64encode(f.read()).decode("ascii")
-            payload = {"message": "Database backup", "content": content_b64, "branch": branch}
-            if sha:
-                payload["sha"] = sha
-            put_url = f"https://api.github.com/repos/{repo}/contents/backup/globalmarket.db"
-            req_put = urllib.request.Request(put_url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="PUT")
-            with urllib.request.urlopen(req_put) as resp:
-                code = resp.getcode()
-                if code in (200, 201):
-                    pushed = True
-        except Exception:
-            pushed = False
-    try:
-        with open(ts_file, "w") as f:
-            f.write(str(time.time()))
-    except Exception:
-        pass
-    if pushed:
-        print("Database backup pushed to GitHub")
-    else:
-        print("Database backup written locally")
-
-def init_db():
-    try:
-        restore_database_if_needed()
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        db_path = os.path.join(base_dir, "globalmarket.db")
-        print("Database path:", db_path)
-        conn = get_db_connection()
-        c = conn.cursor()
-        
-        # Users table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                username TEXT PRIMARY KEY,
-                password_hash TEXT NOT NULL,
-                data TEXT NOT NULL
-            )
-        ''')
-        # Stable user id mapping table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS user_ids (
-                username TEXT PRIMARY KEY,
-                user_id INTEGER UNIQUE
-            )
-        ''')
-        # User logs table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS user_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                action TEXT,
-                amount REAL,
-                timestamp REAL
-            )
-        ''')
-        
-        # Market table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS market (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                satici TEXT,
-                item TEXT,
-                adet INTEGER,
-                fiyat INTEGER,
-                time REAL
-            )
-        ''')
-        
-        # Chat table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS chat (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT,
-                message TEXT,
-                time TEXT
-            )
-        ''')
-        
-        # Lands table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS lands (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                type TEXT NOT NULL,
-                size TEXT NOT NULL,
-                location TEXT NOT NULL,
-                price INTEGER NOT NULL,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Workers table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS workers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                type TEXT NOT NULL,
-                count INTEGER NOT NULL,
-                salary INTEGER NOT NULL,
-                productivity REAL NOT NULL,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Factories table (expanded system)
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS factories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                type TEXT NOT NULL,
-                level INTEGER NOT NULL,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Buildings table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS buildings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                type TEXT NOT NULL,
-                level INTEGER NOT NULL,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Resources table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS resources (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                item TEXT NOT NULL,
-                quantity INTEGER NOT NULL,
-                updated_at REAL NOT NULL
-            )
-        ''')
-        
-        # Transactions table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                type TEXT NOT NULL,
-                amount INTEGER NOT NULL,
-                time REAL NOT NULL,
-                meta TEXT
-            )
-        ''')
-        
-        # Global Prices table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS prices (
-                item TEXT PRIMARY KEY,
-                price REAL NOT NULL,
-                last_change REAL NOT NULL,
-                updated_at REAL NOT NULL
-            )
-        ''')
-        
-        # Market News table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS news (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                body TEXT,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # System State table for global events and settings
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS system_state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-        ''')
-        
-        # Factory Assignments
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS factory_assignments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                factory_type TEXT NOT NULL,
-                count INTEGER NOT NULL,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Logistics: Vehicles
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS vehicles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                type TEXT NOT NULL,
-                capacity INTEGER NOT NULL,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Logistics: Tasks
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS logistics_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner TEXT NOT NULL,
-                vehicle_id INTEGER NOT NULL,
-                item TEXT NOT NULL,
-                amount INTEGER NOT NULL,
-                destination TEXT NOT NULL,
-                city_scope TEXT NOT NULL, -- 'same' or 'different'
-                eta REAL NOT NULL,
-                delivered INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Marketplace Products
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS marketplace_products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                seller TEXT NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT,
-                price INTEGER NOT NULL,
-                stock INTEGER NOT NULL,
-                is_bot INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL
-            )
-        ''')
-        
-        # Seed default prices if empty
-        items = ["Odun","Taş","Demir","Kömür","Buğday","Çelik","Plastik","Elektronik"]
-        base_prices = {
-            "Odun": 20, "Taş": 25, "Demir": 100, "Kömür": 40, "Buğday": 15,
-            "Çelik": 300, "Plastik": 200, "Elektronik": 800
-        }
-        for it in items:
-            c.execute('INSERT OR IGNORE INTO prices (item, price, last_change, updated_at) VALUES (?, ?, ?, ?)',
-                      (it, base_prices[it], 0.0, time.time()))
-        
-        conn.commit()
-        conn.close()
-        conn2 = get_db_connection()
-        total_users = conn2.execute('SELECT COUNT(*) AS c FROM users').fetchone()['c']
-        conn2.close()
-        print(f"Database initialized successfully. Total users: {total_users}")
-        print("User count:", total_users)
-        if total_users == 0:
-            print("WARNING: User data lost!")
-    except Exception as e:
-        print(f"Database initialization failed: {e}")
-
-# Initialize DB immediately for Gunicorn/Render
-init_db()
- 
-def _backfill_user_ids():
-    try:
-        conn = get_db_connection()
-        rows = conn.execute('SELECT username FROM users').fetchall()
-        max_row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
-        next_id = int(max_row['m']) + 1 if max_row and max_row['m'] else 1
-        for r in rows:
-            un = r['username']
-            exists = conn.execute('SELECT user_id FROM user_ids WHERE username = ?', (un,)).fetchone()
-            if not exists:
-                conn.execute('INSERT INTO user_ids (username, user_id) VALUES (?, ?)', (un, next_id))
-                next_id += 1
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
-_backfill_user_ids()
- 
-# Ensure default admin exists without affecting other users
-def create_admin_if_not_exists():
-    try:
-        conn = get_db_connection()
-        row = conn.execute('SELECT username, data FROM users WHERE username = ?', ('Paramen42',)).fetchone()
-        if not row:
-            pw_hash = generate_password_hash('admin123')
-            initial_data = {
-                "username": "Paramen42",
-                "money": 0,
-                "level": 1,
-                "xp": 0,
-                "inventory": {},
-                "factories": {},
-                "factory_storage": {},
-                "factory_last_update": {},
-                "factory_last_collect": {},
-                "factory_run_start": {},
-                "factory_run_duration": {},
-                "factory_boosts": {},
-                "net_worth": 0,
-                "mission": None,
-                "last_active": time.time(),
-                "last_login": 0,
-                "is_afk": False,
-                "is_admin": True,
-                "expedition": None,
-                "last_daily_bonus": 0,
-                "workers_available": 0
-            }
-            conn.execute('INSERT INTO users (username, password_hash, data) VALUES (?, ?, ?)',
-                         ('Paramen42', pw_hash, json.dumps(initial_data)))
-            max_row = conn.execute('SELECT MAX(user_id) AS m FROM user_ids').fetchone()
-            next_id = int(max_row['m']) + 1 if max_row and max_row['m'] else 1
-            conn.execute('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (?, ?)', ('Paramen42', next_id))
-            conn.execute('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (?, ?, ?, ?)', (next_id, 'register', 0, time.time()))
-            conn.commit()
-        else:
-            try:
-                d = json.loads(row['data'])
-                if not d.get('is_admin'):
-                    d['is_admin'] = True
-                    conn.execute('UPDATE users SET data = ? WHERE username = ?', (json.dumps(d), 'Paramen42'))
-                    conn.commit()
-            except Exception:
-                pass
-        conn.close()
-    except Exception:
-        pass
 create_admin_if_not_exists()
  
 # Auto user creation removed to prevent test/default seeding
@@ -1024,11 +764,33 @@ def calculate_production(user):
 def load_logged_in_user():
     g.user = None
     if 'user_id' in session:
+        # Optimized: Only fetch if needed or if user data is old in session
+        # For now, let's keep the g.user for convenience but use session for HUD
         u = get_user(session['user_id'])
         if u:
             g.user = u
         else:
             session.clear()
+
+@app.route('/api/user/me')
+def api_user_me():
+    if 'user_id' not in session:
+        return jsonify({"success": False, "message": "Oturum kapalı"}), 401
+    
+    # Try to use cached data in session if possible for very fast HUD updates
+    # But for now, get_user is already optimized with NullPool/dispose
+    u = get_user(session['user_id'])
+    if not u:
+        return jsonify({"success": False, "message": "Kullanıcı bulunamadı"}), 404
+    
+    return jsonify({
+        "success": True,
+        "username": u['username'],
+        "money": u['money'],
+        "level": u['level'],
+        "xp": u['xp'],
+        "inventory": u.get('inventory', {})
+    })
 
 @app.route('/')
 def index():

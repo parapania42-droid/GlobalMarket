@@ -46,10 +46,14 @@ function showMessage(msg, type = 'info') {
 
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
+    
+    // Fetch initial user data for HUD on ALL pages
+    fetchUserData();
+
     if (path === '/leaderboard') {
         // fetchLeaderboard(); // Otomatik fetch kapatıldı
     } else if (path === '/game') {
-        // updateAll(); // Otomatik fetch kapatıldı
+        updateAll();
         
         // Bind Enter key for chat
         const chatInput = document.getElementById('chat-input');
@@ -58,10 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (e.key === 'Enter') sendChat();
             });
         }
-        // Home widgets: prices, news, leaderboard
-        // fetchPricesHome(); // Otomatik fetch kapatıldı
-        // fetchNewsHome(); // Otomatik fetch kapatıldı
-        // fetchLeaderboardHome(); // Otomatik fetch kapatıldı
     } 
 });
 
@@ -192,11 +192,37 @@ async function fetchMarket() {
 }
 
 async function fetchUserData() {
-    const player = {
-        username: 'Misafir',
-        money: 0,
-        level: 1,
-        xp: 0,
+    try {
+        const res = await fetch('/api/user/me');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success) {
+            globalPlayer = data;
+            renderHUD(data);
+        }
+    } catch (e) {
+        console.error("User data fetch error:", e);
+    }
+}
+
+function renderHUD(data) {
+    const hudUsername = document.getElementById('hud-username');
+    const hudMoney = document.getElementById('hud-money');
+    const hudLevel = document.getElementById('hud-level');
+    const hudXp = document.getElementById('hud-xp');
+    const hudXpBar = document.getElementById('hud-xp-bar');
+
+    if (hudUsername) hudUsername.textContent = data.username;
+    if (hudMoney) hudMoney.textContent = formatMoney(data.money);
+    if (hudLevel) hudLevel.textContent = data.level;
+    
+    if (hudXp && hudXpBar) {
+        const requiredXp = data.level * 1000;
+        const pct = Math.min(100, (data.xp / requiredXp) * 100);
+        hudXp.textContent = `${data.xp}/${requiredXp}`;
+        hudXpBar.style.width = `${pct}%`;
+    }
+}
         inventory: {},
         factories: {},
         net_worth: 0,
