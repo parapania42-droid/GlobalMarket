@@ -685,39 +685,60 @@ def login_page():
     if request.method == 'GET':
         return render_template('login.html')
 
-    data = request.get_json(silent=True) or {}
+    # Handle both JSON and Form data
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+    else:
+        data = request.form
+
     username = _normalize_username(data.get('username'))
     password = data.get('password') or ""
+    
     if not username or not password:
-        return jsonify({"success": False, "message": "Kullanıcı adı ve şifre gerekli"})
+        if request.is_json:
+            return jsonify({"success": False, "message": "Kullanıcı adı ve şifre gerekli"})
+        return render_template('login.html', error="Kullanıcı adı ve şifre gerekli")
 
     try:
         canonical = _find_username_ci(username)
         if not canonical:
-            return jsonify({"success": False, "message": "Kullanıcı bulunamadı"})
+            if request.is_json:
+                return jsonify({"success": False, "message": "Kullanıcı bulunamadı"})
+            return render_template('login.html', error="Kullanıcı bulunamadı")
 
         conn = get_db_connection()
         try:
             row = conn.execute('SELECT username, password_hash FROM users WHERE username = ?', (canonical,)).fetchone()
             if not row:
-                return jsonify({"success": False, "message": "Kullanıcı veritabanında mevcut değil"})
+                if request.is_json:
+                    return jsonify({"success": False, "message": "Kullanıcı veritabanında mevcut değil"})
+                return render_template('login.html', error="Kullanıcı veritabanında mevcut değil")
                 
             if not check_password_hash(row['password_hash'], password):
-                return jsonify({"success": False, "message": "Şifre hatalı"})
+                if request.is_json:
+                    return jsonify({"success": False, "message": "Şifre hatalı"})
+                return render_template('login.html', error="Şifre hatalı")
 
             # Giriş başarılı: Session ata
-            session.clear() # Önceki oturumu temizle
+            session.clear()
             session.permanent = True
             session['user_id'] = row['username']
-            return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
+            
+            if request.is_json:
+                return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
+            return redirect(url_for('game'))
         except Exception as e:
             print(f"Login DB error: {str(e)}")
-            return jsonify({"success": False, "message": "Veritabanı bağlantı hatası"})
+            if request.is_json:
+                return jsonify({"success": False, "message": "Veritabanı bağlantı hatası"})
+            return render_template('login.html', error="Veritabanı hatası")
         finally:
             conn.close()
     except Exception as e:
         print(f"Login route error: {str(e)}")
-        return jsonify({"success": False, "message": "Giriş sırasında teknik bir hata oluştu"})
+        if request.is_json:
+            return jsonify({"success": False, "message": "Giriş sırasında teknik bir hata oluştu"})
+        return render_template('login.html', error="Sistem hatası")
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():

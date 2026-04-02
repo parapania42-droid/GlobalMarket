@@ -11,11 +11,11 @@
         <div class="card login-box">
             <h1>🌍 Global Market</h1>
             <p style="color:var(--text-muted)">Küresel ticaret ekonomisine katılın.</p>
-            <div style="margin-top: 30px;">
-                <input type="text" id="username" placeholder="Kullanıcı Adı" autocomplete="off">
-                <input type="password" id="password" placeholder="Şifre" autocomplete="off" style="margin-top:10px;">
-                <button class="btn" style="width:100%; margin-top:20px;" onclick="login()">Pazara Gir</button>
-            </div>
+            <form style="margin-top: 30px;" action="/login" method="POST" id="loginForm">
+                <input type="text" name="username" id="username" placeholder="Kullanıcı Adı" required autocomplete="username">
+                <input type="password" name="password" id="password" placeholder="Şifre" required autocomplete="current-password" style="margin-top:10px;">
+                <button type="submit" class="btn" style="width:100%; margin-top:20px;">Pazara Gir</button>
+            </form>
             <div style="margin-top: 20px; text-align: center;">
                 <a href="/register" style="color:var(--primary); text-decoration:none;">Hesabın yok mu? Kayıt Ol</a>
             </div>

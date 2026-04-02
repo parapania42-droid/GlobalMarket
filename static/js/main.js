@@ -47,6 +47,33 @@ function showMessage(msg, type = 'info') {
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
     
+    // Login form handling
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(loginForm);
+            const data = Object.fromEntries(formData.entries());
+            
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    window.location.href = result.redirect || '/game';
+                } else {
+                    alert(result.message || "Giriş başarısız");
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Bağlantı hatası!");
+            }
+        });
+    }
+
     // Fetch initial user data for HUD on ALL pages
     fetchUserData();
 
