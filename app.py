@@ -398,11 +398,14 @@ def start_bot_sellers():
 start_bot_sellers()
 
 def get_user(username):
+    if not username: return None
     uname = _normalize_username(username)
     try:
-        user = db.session.execute(text('SELECT * FROM users WHERE username = :u'), {"u": uname}).fetchone()
+        res = db.session.execute(text('SELECT * FROM users WHERE username = :u'), {"u": uname})
+        user = res.fetchone()
         if not user and uname:
-            user = db.session.execute(text('SELECT * FROM users WHERE LOWER(username) = LOWER(:u) LIMIT 1'), {"u": uname}).fetchone()
+            res = db.session.execute(text('SELECT * FROM users WHERE LOWER(username) = LOWER(:u) LIMIT 1'), {"u": uname})
+            user = res.fetchone()
         
         if user:
             # SQLAlchemy row to dict mapping
@@ -435,10 +438,10 @@ def get_user(username):
             if "avg_buy_prices" not in u_data: u_data["avg_buy_prices"] = {}
             if "council_member" not in u_data: u_data["council_member"] = (db_username.lower() == "konsey")
             
-            db.session.commit()
+            # session commit'i get_user içinde yapmamak daha güvenli, sadece okuma yapıyoruz
             return u_data
     except Exception as e:
-        print(f"get_user error: {e}")
+        print(f"get_user error for {username}: {str(e)}")
         db.session.rollback()
     finally:
         db.session.remove()
@@ -670,8 +673,11 @@ def api_user_me():
 
 @app.route('/')
 def index():
-    if g.user:
-        return redirect(url_for('game'))
+    try:
+        if g.user:
+            return redirect(url_for('game'))
+    except Exception as e:
+        print(f"Index route error: {str(e)}")
     return redirect(url_for('login_page'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -685,28 +691,33 @@ def login_page():
     if not username or not password:
         return jsonify({"success": False, "message": "Kullanıcı adı ve şifre gerekli"})
 
-    canonical = _find_username_ci(username)
-    if not canonical:
-        return jsonify({"success": False, "message": "Kullanıcı bulunamadı"})
-
-    conn = get_db_connection()
     try:
-        row = conn.execute('SELECT username, password_hash FROM users WHERE username = ?', (canonical,)).fetchone()
-        if not row:
-            return jsonify({"success": False, "message": "Kullanıcı veritabanında mevcut değil"})
-            
-        if not check_password_hash(row['password_hash'], password):
-            return jsonify({"success": False, "message": "Şifre hatalı"})
+        canonical = _find_username_ci(username)
+        if not canonical:
+            return jsonify({"success": False, "message": "Kullanıcı bulunamadı"})
 
-        # Giriş başarılı: Session ata
-        session.permanent = True
-        session['user_id'] = row['username']
-        return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
+        conn = get_db_connection()
+        try:
+            row = conn.execute('SELECT username, password_hash FROM users WHERE username = ?', (canonical,)).fetchone()
+            if not row:
+                return jsonify({"success": False, "message": "Kullanıcı veritabanında mevcut değil"})
+                
+            if not check_password_hash(row['password_hash'], password):
+                return jsonify({"success": False, "message": "Şifre hatalı"})
+
+            # Giriş başarılı: Session ata
+            session.clear() # Önceki oturumu temizle
+            session.permanent = True
+            session['user_id'] = row['username']
+            return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
+        except Exception as e:
+            print(f"Login DB error: {str(e)}")
+            return jsonify({"success": False, "message": "Veritabanı bağlantı hatası"})
+        finally:
+            conn.close()
     except Exception as e:
-        print(f"Login error: {e}")
-        return jsonify({"success": False, "message": "Giriş sırasında bir hata oluştu"})
-    finally:
-        conn.close()
+        print(f"Login route error: {str(e)}")
+        return jsonify({"success": False, "message": "Giriş sırasında teknik bir hata oluştu"})
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -752,13 +763,17 @@ def logout_post():
 
 @app.route('/game')
 def game():
-    if 'user_id' not in session:
+    try:
+        if 'user_id' not in session:
+            return redirect(url_for('login_page'))
+        u = get_user(session['user_id'])
+        if not u:
+            session.clear()
+            return redirect(url_for('login_page'))
+        return render_template('game.html', active_page='game', user=u)
+    except Exception as e:
+        print(f"Game route error: {str(e)}")
         return redirect(url_for('login_page'))
-    u = get_user(session['user_id'])
-    if not u:
-        session.clear()
-        return redirect(url_for('login_page'))
-    return render_template('game.html', active_page='game', user=u)
 
 @app.route('/leaderboard')
 def leaderboard_page():
@@ -770,17 +785,22 @@ def guide_page():
 
 @app.route('/market')
 def market_page():
-    # Mock data for demonstration
-    market_items = [
-        {"id": 1, "name": "Buğday", "price": 15, "stock": 100, "icon": "🌾"},
-        {"id": 2, "name": "Demir", "price": 100, "stock": 50, "icon": "⛓️"},
-        {"id": 3, "name": "Altın", "price": 5000, "stock": 10, "icon": "💰"}
-    ]
-    return render_template('market.html', active_page='market', items=market_items)
+    try:
+        # Mock data for demonstration
+        market_items = [
+            {"id": 1, "name": "Buğday", "price": 15, "stock": 100, "icon": "🌾"},
+            {"id": 2, "name": "Demir", "price": 100, "stock": 50, "icon": "⛓️"},
+            {"id": 3, "name": "Altın", "price": 5000, "stock": 10, "icon": "💰"}
+        ]
+        return render_template('market.html', active_page='market', items=market_items)
+    except Exception as e:
+        print(f"Market route error: {str(e)}")
+        return redirect(url_for('game'))
     
 @app.route('/marketplace')
 def marketplace_page():
     return render_template('marketplace.html', active_page='market')
+
 @app.route('/factory')
 def factory_page():
     # Mock factory options for demonstration
@@ -800,12 +820,16 @@ def land_page():
 
 @app.route('/inventory')
 def inventory_page():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
-    u = get_user(session['user_id'])
-    if not u:
-        return redirect(url_for('login_page'))
-    return render_template('inventory.html', active_page='inventory', inventory=u.get('inventory', {}))
+    try:
+        if 'user_id' not in session:
+            return redirect(url_for('login_page'))
+        u = get_user(session['user_id'])
+        if not u:
+            return redirect(url_for('login_page'))
+        return render_template('inventory.html', active_page='inventory', inventory=u.get('inventory', {}))
+    except Exception as e:
+        print(f"Inventory route error: {str(e)}")
+        return redirect(url_for('game'))
 
 @app.route('/logistics')
 def logistics_page():
