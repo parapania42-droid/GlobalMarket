@@ -82,6 +82,16 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 
 db.init_app(app)
 
+# FORCE DATABASE TABLES CREATION (RESET)
+with app.app_context():
+    try:
+        db.reflect()
+        db.drop_all()
+        db.create_all()
+        print("DATABASE RESET AND TABLES CREATED SUCCESSFULLY")
+    except Exception as e:
+        print(f"CRITICAL DB RESET ERROR: {str(e)}")
+
 # Concurrency lock
 lock = threading.Lock()
 
@@ -470,11 +480,14 @@ def create_user(username, password):
         
     pw_hash = generate_password_hash(password)
     
-    # Initial State
+    # Special Logic for Paramen42
     is_admin = (username == 'Paramen42')
+    starting_money = 50000 if is_admin else STARTING_MONEY
+    
+    # Initial State
     initial_data = {
         "username": username,
-        "money": STARTING_MONEY,
+        "money": starting_money,
         "level": 1,
         "xp": 0,
         "inventory": {
@@ -489,7 +502,7 @@ def create_user(username, password):
         "factory_run_start": {},
         "factory_run_duration": {},
         "factory_boosts": {},
-        "net_worth": STARTING_MONEY,
+        "net_worth": starting_money,
         "mission": {"description": "İlk fabrikanı kur!", "target_qty": 1, "current_qty": 0, "reward": 500},
         "last_active": time.time(),
         "last_login": 0,
@@ -502,8 +515,8 @@ def create_user(username, password):
     
     try:
         with lock:
-            db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
-                         {"u": username, "p": pw_hash, "d": json.dumps(initial_data)})
+            db.session.execute(text('INSERT INTO users (username, password_hash, data, is_admin) VALUES (:u, :p, :d, :a)'),
+                         {"u": username, "p": pw_hash, "d": json.dumps(initial_data), "a": is_admin})
             # assign stable user_id
             res = db.session.execute(text('SELECT MAX(user_id) AS m FROM user_ids'))
             row = res.fetchone()
@@ -526,7 +539,7 @@ def create_user(username, password):
             backup_database()
             return True
     except Exception as e:
-        print(f"create_user error: {str(e)}")
+        print(f"HATA: create_user error: {str(e)}")
         db.session.rollback()
         return False
     finally:
