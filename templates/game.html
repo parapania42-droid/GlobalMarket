@@ -21,11 +21,25 @@
     <div class="container main-game-area" id="game-page-container">
         <div class="card">
             <div class="card-header"><h2>📊 Özet</h2></div>
-            <div id="home-summary" class="hint-text">Yükleniyor...</div>
+            <div id="home-summary" class="hint-text">
+                <div style="display:grid; grid-template-columns: repeat(2,1fr); gap:8px;">
+                    <div>Toplam Para: <strong>50.000 TL</strong></div>
+                    <div>Toplam İşçi: <strong>0</strong></div>
+                    <div>Envanter Değeri: <strong>0 TL</strong></div>
+                    <div>Aktif Lojistik Görevleri: <strong>0</strong></div>
+                    <div>Özet Envanter: <strong>-</strong></div>
+                    <div>Canlı Fiyatlar: <a href="/marketplace">Market</a></div>
+                </div>
+            </div>
         </div>
         <div class="card" style="margin-bottom:15px;">
             <div class="card-header"><h2>💰 Canlı Piyasa</h2></div>
-            <div id="home-price-list" class="inventory-grid"></div>
+            <div id="home-price-list" class="inventory-grid">
+                <div class="inventory-item"><span>🌾 Buğday:</span> <strong>20 TL</strong></div>
+                <div class="inventory-item"><span>🪵 Odun:</span> <strong>50 TL</strong></div>
+                <div class="inventory-item"><span>🪨 Taş:</span> <strong>40 TL</strong></div>
+                <div class="inventory-item"><span>⛓️ Demir:</span> <strong>120 TL</strong></div>
+            </div>
         </div>
         <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
              <button id="daily-bonus-btn" class="btn btn-sm btn-warning" onclick="claimDailyBonus()" style="display:none;">🎁 GÜNLÜK ÖDÜL</button>
@@ -62,7 +76,20 @@
             <div class="column-inventory">
                 <div class="card">
                     <div class="card-header"><h3>📰 Piyasa Haberleri</h3></div>
-                    <div id="home-news-list"></div>
+                    <div id="home-news-list">
+                        <div class="news-item" style="padding:10px; border-bottom:1px solid #333;">
+                            <div style="font-weight:bold; color:var(--warning);">Global Market Açıldı!</div>
+                            <div style="font-size:0.8em; color:var(--text-muted);">Yeni ekonomi sistemine hoş geldiniz.</div>
+                        </div>
+                        <div class="news-item" style="padding:10px; border-bottom:1px solid #333;">
+                            <div style="font-weight:bold; color:var(--success);">Demir Fiyatları Stabil</div>
+                            <div style="font-size:0.8em; color:var(--text-muted);">İnşaat sektörü demir arzını karşılıyor.</div>
+                        </div>
+                        <div class="news-item" style="padding:10px;">
+                            <div style="font-weight:bold; color:var(--primary);">Tarım Teşviği Başladı</div>
+                            <div style="font-size:0.8em; color:var(--text-muted);">Buğday üreticilerine ek bonuslar yolda.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

@@ -30,7 +30,7 @@ app.config.update(
 # ---------------------------------------------------------
 # CONSTANTS & CONFIG
 # ---------------------------------------------------------
-STARTING_MONEY = 10000
+STARTING_MONEY = 50000
 
 FACTORY_CONFIG = {
     "wood_cutter": {"name": "Odun Kesim Alanı", "type": "Odun", "rate": 5, "capacity": 1000, "unlock_lvl": 1, "cost": 1000, "worker_capacity": 5, "duration_min": 5},
@@ -189,6 +189,17 @@ def init_db():
     with app.app_context():
         try:
             db.reflect()
+            # Reset existing users and related data if requested
+            # db.drop_all() # This might be too destructive for Render if SSL is flaky
+            # Safe reset:
+            with db.engine.connect() as conn:
+                for tbl in ['users', 'user_ids', 'user_logs', 'lands', 'workers', 'factories', 'transactions', 'logistics_tasks', 'vehicles', 'factory_assignments', 'market', 'chat']:
+                    try:
+                        conn.execute(text(f"DELETE FROM {tbl}"))
+                    except Exception:
+                        pass
+                conn.commit()
+            
             db.create_all()
             restore_database_if_needed()
             with db.engine.connect() as conn:
@@ -791,7 +802,8 @@ def game():
         if not u:
             session.clear()
             return redirect(url_for('login_page'))
-        return render_template('game.html', active_page='game', user=u)
+        # Ensure username is explicitly passed
+        return render_template('game.html', active_page='game', user=u, username=u['username'])
     except Exception as e:
         print(f"Game route error: {str(e)}")
         return redirect(url_for('login_page'))

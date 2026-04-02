@@ -14,7 +14,7 @@
             <div class="hud-group">
                 <div class="hud-item">
                     <span class="hud-label">Oyuncu</span>
-                    <span class="hud-value" id="hud-username">-</span>
+                    <span class="hud-value" id="hud-username">{% if username %}{{ username }}{% else %}-{% endif %}</span>
                 </div>
                 <div class="hud-item">
                     <span class="hud-label">Para</span>
