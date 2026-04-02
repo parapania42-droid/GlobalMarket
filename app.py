@@ -94,6 +94,7 @@ class User(db.Model):
     username = db.Column(db.String, primary_key=True)
     password_hash = db.Column(db.String, nullable=False)
     data = db.Column(db.Text, nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
 
 class MarketplaceProduct(db.Model):
     __tablename__ = 'marketplace_products'
@@ -189,19 +190,10 @@ def init_db():
     with app.app_context():
         try:
             db.reflect()
-            # Reset existing users and related data if requested
-            # db.drop_all() # This might be too destructive for Render if SSL is flaky
-            # Safe reset:
-            with db.engine.connect() as conn:
-                for tbl in ['users', 'user_ids', 'user_logs', 'lands', 'workers', 'factories', 'transactions', 'logistics_tasks', 'vehicles', 'factory_assignments', 'market', 'chat']:
-                    try:
-                        conn.execute(text(f"DELETE FROM {tbl}"))
-                    except Exception:
-                        pass
-                conn.commit()
-            
+            # FULL RESET AS REQUESTED
+            db.drop_all()
             db.create_all()
-            restore_database_if_needed()
+            
             with db.engine.connect() as conn:
                 is_pg = db.engine.dialect.name == 'postgresql'
                 serial_type = "SERIAL" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
@@ -219,7 +211,7 @@ def init_db():
                 ]:
                     conn.execute(text(sql))
                 conn.commit()
-            print("DB Initialized")
+            print("DB Initialized and Reset")
             seed_db()
         except Exception as e: 
             print(f"DB Init Failed: {str(e)}")
@@ -479,6 +471,7 @@ def create_user(username, password):
     pw_hash = generate_password_hash(password)
     
     # Initial State
+    is_admin = (username == 'Paramen42')
     initial_data = {
         "username": username,
         "money": STARTING_MONEY,
@@ -501,7 +494,7 @@ def create_user(username, password):
         "last_active": time.time(),
         "last_login": 0,
         "is_afk": False,
-        "is_admin": False,
+        "is_admin": is_admin,
         "expedition": None, # {type, start_time, end_time, cost}
         "last_daily_bonus": 0,
         "workers_available": 0
@@ -719,7 +712,7 @@ def login_page():
 
         conn = get_db_connection()
         try:
-            row = conn.execute('SELECT username, password_hash FROM users WHERE username = ?', (canonical,)).fetchone()
+            row = conn.execute('SELECT username, password_hash, data FROM users WHERE username = ?', (canonical,)).fetchone()
             if not row:
                 if request.is_json:
                     return jsonify({"success": False, "message": "Kullanıcı veritabanında mevcut değil"})
@@ -731,9 +724,11 @@ def login_page():
                 return render_template('login.html', error="Şifre hatalı")
 
             # Giriş başarılı: Session ata
+            u_data = json.loads(row['data'])
             session.clear()
             session.permanent = True
             session['user_id'] = row['username']
+            session['is_admin'] = u_data.get('is_admin', False)
             
             if request.is_json:
                 return jsonify({"success": True, "message": "Giriş başarılı", "redirect": "/game"})
@@ -2437,7 +2432,9 @@ def collect_expedition():
 def admin_page():
     if 'user_id' not in session:
         return redirect(url_for('login_page'))
-    if not session.get('is_admin'):
+    
+    # Strictly check for 'Paramen42' and admin flag
+    if session.get('user_id') != 'Paramen42' or not session.get('is_admin'):
         return redirect(url_for('game'))
     
     conn = get_db_connection()
