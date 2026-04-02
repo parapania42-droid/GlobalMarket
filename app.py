@@ -1,26 +1,21 @@
-import sqlite3
-import json
+import os
 import time
+import json
 import random
 import threading
-import os
+import sqlalchemy
 import base64
 import urllib.request
 import urllib.error
 import shutil
-from functools import wraps
-from datetime import timedelta
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
-from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import text, pool
-import sqlalchemy
-from sqlalchemy.pool import NullPool
-from flask_sqlalchemy import SQLAlchemy
 import re
-from urllib.parse import urlparse
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
-STARTING_MONEY = 5000
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
+from sqlalchemy.pool import NullPool
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = "globalmarket_fixed_secret_key"
@@ -32,77 +27,73 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax"
 )
 
-# SQLAlchemy engine options as config (Optimized for speed)
+# ---------------------------------------------------------
+# CONSTANTS & CONFIG
+# ---------------------------------------------------------
+STARTING_MONEY = 10000
+
+FACTORY_CONFIG = {
+    "wood_cutter": {"name": "Odun Kesim Alanı", "type": "Odun", "rate": 5, "capacity": 1000, "unlock_lvl": 1, "cost": 1000, "worker_capacity": 5, "duration_min": 5},
+    "stone_quarry": {"name": "Taş Ocağı", "type": "Taş", "rate": 4, "capacity": 1000, "unlock_lvl": 2, "cost": 2000, "worker_capacity": 5, "duration_min": 10},
+    "iron_mine": {"name": "Demir Madeni", "type": "Demir", "rate": 3, "capacity": 500, "unlock_lvl": 5, "cost": 5000, "worker_capacity": 10, "duration_min": 15},
+    "steel_mill": {"name": "Çelik Fabrikası", "type": "Çelik", "rate": 2, "capacity": 200, "unlock_lvl": 10, "cost": 15000, "worker_capacity": 15, "duration_min": 20},
+    "plastic_plant": {"name": "Plastik Tesisi", "type": "Plastik", "rate": 2, "capacity": 200, "unlock_lvl": 12, "cost": 20000, "worker_capacity": 15, "duration_min": 20},
+    "electronics_factory": {"name": "Elektronik Fabrikası", "type": "Elektronik", "rate": 1, "capacity": 100, "unlock_lvl": 20, "cost": 50000, "worker_capacity": 20, "duration_min": 30},
+    "food_factory": {"name": "Gıda Fabrikası", "type": "Gıda", "rate": 5, "capacity": 500, "unlock_lvl": 3, "cost": 3000, "worker_capacity": 8, "duration_min": 10},
+    "textile_mill": {"name": "Tekstil Atölyesi", "type": "Tekstil", "rate": 3, "capacity": 400, "unlock_lvl": 4, "cost": 4000, "worker_capacity": 8, "duration_min": 10}
+}
+
+def _normalize_username(u: str) -> str:
+    return str(u or "").strip()
+
+def _find_username_ci(username: str):
+    if not username: return None
+    try:
+        row = db.session.execute(text('SELECT username FROM users WHERE LOWER(username) = LOWER(:u)'), {"u": username}).fetchone()
+        return row[0] if row else None
+    except Exception: return None
+
+# ---------------------------------------------------------
+# DATABASE CONFIGURATION
+# ---------------------------------------------------------
+
+db = SQLAlchemy()
+
+def _normalize_db_url(url: str) -> str:
+    if not url: return url
+    if url.startswith("postgres://"): url = url.replace("postgres://", "postgresql://", 1)
+    if "sslmode=" not in url:
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}sslmode=require"
+    return url
+
+db_url = os.environ.get("DATABASE_URL", "").strip()
+app.config['SQLALCHEMY_DATABASE_URI'] = _normalize_db_url(db_url) or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# FORCE NullPool for Render
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "poolclass": sqlalchemy.pool.NullPool,
+    "poolclass": NullPool,
     "connect_args": {
         "sslmode": "require",
         "connect_timeout": 10
     }
 }
 
+db.init_app(app)
+
 # Concurrency lock
 lock = threading.Lock()
 
 # ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-
-FACTORY_CONFIG = {
-    "wood": {"name": "Odun Fabrikası", "cost": 100, "rate": 10, "capacity": 100, "unlock_lvl": 1, "type": "Odun", "worker_capacity": 5, "duration_min": 30},
-    "stone": {"name": "Taş Ocağı", "cost": 500, "rate": 5, "capacity": 50, "unlock_lvl": 2, "type": "Taş", "worker_capacity": 5, "duration_min": 60},
-    "iron": {"name": "Demir Madeni", "cost": 2000, "rate": 3, "capacity": 30, "unlock_lvl": 3, "type": "Demir", "worker_capacity": 15, "duration_min": 90},
-    "coal": {"name": "Kömür Madeni", "cost": 1500, "rate": 4, "capacity": 40, "unlock_lvl": 3, "type": "Kömür", "worker_capacity": 15},
-    "steel": {"name": "Çelik Fabrikası", "cost": 250000, "rate": 1, "capacity": 15, "unlock_lvl": 20, "type": "Çelik", "worker_capacity": 30, "duration_min": 120},
-    "plastic": {"name": "Plastik Fabrikası", "cost": 500000, "rate": 1.5, "capacity": 20, "unlock_lvl": 25, "type": "Plastik", "worker_capacity": 30, "duration_min": 75},
-    "electronics": {"name": "Elektronik Fabrikası", "cost": 1000000, "rate": 0.8, "capacity": 10, "unlock_lvl": 30, "type": "Elektronik", "worker_capacity": 30, "duration_min": 180},
-    "textile": {"name": "Tekstil Fabrikası", "cost": 80000, "rate": 6, "capacity": 80, "unlock_lvl": 8, "type": "Tekstil", "worker_capacity": 12, "duration_min": 45},
-    "food": {"name": "Gıda Fabrikası", "cost": 120000, "rate": 8, "capacity": 90, "unlock_lvl": 10, "type": "Gıda", "worker_capacity": 14, "duration_min": 60},
-    "automotive": {"name": "Otomotiv Fabrikası", "cost": 2000000, "rate": 0.7, "capacity": 12, "unlock_lvl": 28, "type": "Otomotiv", "worker_capacity": 28, "duration_min": 240},
-    "heavy_industry": {"name": "Ağır Sanayi", "cost": 3500000, "rate": 0.5, "capacity": 10, "unlock_lvl": 32, "type": "Ağır Sanayi", "worker_capacity": 35, "duration_min": 360}
-    ,
-    # Orta Seviye
-    "glass": {"name": "Cam Fabrikası", "cost": 750000, "rate": 1.2, "capacity": 25, "unlock_lvl": 22, "type": "Cam", "worker_capacity": 20, "duration_min": 100},
-    "chem": {"name": "Kimya Fabrikası", "cost": 900000, "rate": 1.4, "capacity": 25, "unlock_lvl": 24, "type": "Kimyasal", "worker_capacity": 25, "duration_min": 110},
-    # Yüksek Seviye
-    "chip": {"name": "Çip Fabrikası", "cost": 2500000, "rate": 0.6, "capacity": 12, "unlock_lvl": 35, "type": "Çip", "worker_capacity": 30, "duration_min": 300},
-    "battery": {"name": "Batarya Fabrikası", "cost": 3000000, "rate": 0.7, "capacity": 15, "unlock_lvl": 38, "type": "Batarya", "worker_capacity": 30, "duration_min": 200},
-    # Premium Seviye
-    "car": {"name": "Otomobil Fabrikası", "cost": 10000000, "rate": 0.4, "capacity": 8, "unlock_lvl": 45, "type": "Otomobil", "worker_capacity": 35},
-    "smartphone": {"name": "Akıllı Telefon Fabrikası", "cost": 15000000, "rate": 0.5, "capacity": 10, "unlock_lvl": 48, "type": "Akıllı Telefon", "worker_capacity": 35},
-    "robot": {"name": "Robot Fabrikası", "cost": 20000000, "rate": 0.3, "capacity": 6, "unlock_lvl": 50, "type": "Robot", "worker_capacity": 40},
-    # Lojistik Araç Fabrikaları (araç üretir)
-    "truck_factory": {"name": "Kamyon Fabrikası", "cost": 5000000, "rate": 0.2, "capacity": 2, "unlock_lvl": 40, "type": "Vehicle:Kamyon", "worker_capacity": 20},
-    "tir_factory": {"name": "Tır Fabrikası", "cost": 8000000, "rate": 0.15, "capacity": 2, "unlock_lvl": 42, "type": "Vehicle:Tır", "worker_capacity": 20},
-    "plane_factory": {"name": "Kargo Uçağı Fabrikası", "cost": 20000000, "rate": 0.1, "capacity": 1, "unlock_lvl": 55, "type": "Vehicle:Uçak", "worker_capacity": 25},
-    "ship_factory": {"name": "Gemi Fabrikası", "cost": 50000000, "rate": 0.05, "capacity": 1, "unlock_lvl": 60, "type": "Vehicle:Gemi", "worker_capacity": 25}
-}
-
-# ---------------------------------------------------------
-# DATABASE CONFIGURATION
-# ---------------------------------------------------------
-
-def _normalize_db_url(url: str) -> str:
-    if not url:
-        return url
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    if "sslmode=" not in url:
-        sep = "&" if "?" in url else "?"
-        url += f"{sep}sslmode=require"
-    return url
-
-db = SQLAlchemy()
-
-db_url = os.environ.get("DATABASE_URL")
-app.config['SQLALCHEMY_DATABASE_URI'] = _normalize_db_url(db_url) or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-db.init_app(app)
-
-# ---------------------------------------------------------
 # DATABASE MODELS
 # ---------------------------------------------------------
+
+class User(db.Model):
+    __tablename__ = 'users'
+    username = db.Column(db.String, primary_key=True)
+    password_hash = db.Column(db.String, nullable=False)
+    data = db.Column(db.Text, nullable=False)
 
 class MarketplaceProduct(db.Model):
     __tablename__ = 'marketplace_products'
@@ -123,331 +114,155 @@ class FactoryRow(db.Model):
     level = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.Float, nullable=False)
 
+class Transaction(db.Model):
+    __tablename__ = 'transactions'
+    id = db.Column(db.Integer, primary_key=True)
+    owner = db.Column(db.String, nullable=False)
+    type = db.Column(db.String, nullable=False)
+    amount = db.Column(db.Integer, nullable=False)
+    balance_after = db.Column(db.Integer, default=0)
+    description = db.Column(db.String)
+    time = db.Column(db.Float, nullable=False)
+    meta = db.Column(db.String)
+
 # ---------------------------------------------------------
 # DATABASE INITIALIZATION
 # ---------------------------------------------------------
 
+def _repo_cfg():
+    return os.environ.get("GITHUB_REPO", "").strip(), os.environ.get("GITHUB_BRANCH", "main").strip(), os.environ.get("GITHUB_TOKEN", "").strip()
+
+def restore_database_if_needed():
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_path = os.path.join(base_dir, "globalmarket.db")
+    if os.path.exists(db_path) and os.path.getsize(db_path) > 0: return
+    repo, branch, token = _repo_cfg()
+    if repo:
+        try:
+            url = f"https://api.github.com/repos/{repo}/contents/backup/globalmarket.db?ref={branch}"
+            headers = {"Accept": "application/vnd.github+json"}
+            if token: headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req) as resp:
+                j = json.loads(resp.read().decode("utf-8"))
+                content_b64 = j.get("content", "").replace("\n", "")
+                if content_b64:
+                    with open(db_path, "wb") as f: f.write(base64.b64decode(content_b64))
+                    print("DB Restored from GitHub")
+        except Exception: pass
+
+def backup_database():
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_path = os.path.join(base_dir, "globalmarket.db")
+    if not os.path.exists(db_path): return
+    backup_dir = os.path.join(base_dir, "backup")
+    os.makedirs(backup_dir, exist_ok=True)
+    ts_file = os.path.join(backup_dir, ".last_backup")
+    if os.path.exists(ts_file) and time.time() - os.path.getmtime(ts_file) < 120: return
+    try:
+        shutil.copyfile(db_path, os.path.join(backup_dir, "globalmarket.db"))
+        with open(ts_file, "w") as f: f.write(str(time.time()))
+    except Exception: pass
+
 def init_db():
     with app.app_context():
         try:
-            # First ensure tables are created via SQLAlchemy models
             db.create_all()
-            
-            # Then perform manual migrations/backfills if needed
             restore_database_if_needed()
-            
-            # Using raw SQL for some complex table definitions not in models
-            # but doing it safely within context
-            conn = db.engine.connect()
-            try:
-                # Stable user id mapping table
-                conn.execute(text('''
-                    CREATE TABLE IF NOT EXISTS user_ids (
-                        username TEXT PRIMARY KEY,
-                        user_id INTEGER UNIQUE
-                    )
-                '''))
-                # User logs table
-                conn.execute(text('''
-                    CREATE TABLE IF NOT EXISTS user_logs (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER,
-                        action TEXT,
-                        amount REAL,
-                        timestamp REAL
-                    )
-                '''))
-                
-                # Market table
-                conn.execute(text('''
-                    CREATE TABLE IF NOT EXISTS market (
-                        id SERIAL PRIMARY KEY,
-                        satici TEXT,
-                        item TEXT,
-                        adet INTEGER,
-                        fiyat INTEGER,
-                        time REAL
-                    )
-                '''))
-                
-                # Chat table
-                conn.execute(text('''
-                    CREATE TABLE IF NOT EXISTS chat (
-                        id SERIAL PRIMARY KEY,
-                        username TEXT,
-                        message TEXT,
-                        time TEXT
-                    )
-                '''))
-                
-                # Global Prices table
-                conn.execute(text('''
-                    CREATE TABLE IF NOT EXISTS prices (
-                        item TEXT PRIMARY KEY,
-                        price REAL NOT NULL,
-                        last_change REAL NOT NULL,
-                        updated_at REAL NOT NULL
-                    )
-                '''))
-                
-                # System State table
-                conn.execute(text('''
-                    CREATE TABLE IF NOT EXISTS system_state (
-                        key TEXT PRIMARY KEY,
-                        value TEXT NOT NULL
-                    )
-                '''))
-
-                # Seed default prices if empty
-                items = ["Odun","Taş","Demir","Kömür","Buğday","Çelik","Plastik","Elektronik"]
-                base_prices = {
-                    "Odun": 20, "Taş": 25, "Demir": 100, "Kömür": 40, "Buğday": 15,
-                    "Çelik": 300, "Plastik": 200, "Elektronik": 800
-                }
-                for it in items:
-                    conn.execute(text('INSERT INTO prices (item, price, last_change, updated_at) VALUES (:i, :p, 0.0, :t) ON CONFLICT (item) DO NOTHING'),
-                              {"i": it, "p": base_prices[it], "t": time.time()})
-                
+            with db.engine.connect() as conn:
+                is_pg = db.engine.dialect.name == 'postgresql'
+                serial_type = "SERIAL" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+                for sql in [
+                    f"CREATE TABLE IF NOT EXISTS user_ids (username TEXT PRIMARY KEY, user_id INTEGER UNIQUE)",
+                    f"CREATE TABLE IF NOT EXISTS user_logs (id {serial_type}, user_id INTEGER, action TEXT, amount REAL, timestamp REAL)",
+                    f"CREATE TABLE IF NOT EXISTS market (id {serial_type}, satici TEXT, item TEXT, adet INTEGER, fiyat INTEGER, time REAL)",
+                    f"CREATE TABLE IF NOT EXISTS chat (id {serial_type}, username TEXT, message TEXT, time TEXT)",
+                    f"CREATE TABLE IF NOT EXISTS prices (item TEXT PRIMARY KEY, price REAL NOT NULL, last_change REAL NOT NULL, updated_at REAL NOT NULL)",
+                    f"CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+                    f"CREATE TABLE IF NOT EXISTS factory_assignments (id {serial_type}, owner TEXT NOT NULL, factory_type TEXT NOT NULL, count INTEGER NOT NULL, created_at REAL NOT NULL)",
+                    f"CREATE TABLE IF NOT EXISTS vehicles (id {serial_type}, owner TEXT NOT NULL, type TEXT NOT NULL, capacity INTEGER NOT NULL, created_at REAL NOT NULL)",
+                    f"CREATE TABLE IF NOT EXISTS logistics_tasks (id {serial_type}, owner TEXT NOT NULL, vehicle_id INTEGER NOT NULL, item TEXT NOT NULL, amount INTEGER NOT NULL, destination TEXT NOT NULL, city_scope TEXT NOT NULL, eta REAL NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL)",
+                    f"CREATE TABLE IF NOT EXISTS transactions (id {serial_type}, owner TEXT NOT NULL, type TEXT NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER, description TEXT, time REAL NOT NULL, meta TEXT)"
+                ]:
+                    conn.execute(text(sql))
                 conn.commit()
-            finally:
-                conn.close()
-                
-            print("Database initialized successfully.")
-        except Exception as e:
-            print(f"Database initialization failed: {e}")
-
-# Call init_db within context
-init_db()
-
-def _backfill_user_ids():
-    with app.app_context():
-        try:
-            # Simplified backfill using db.session
-            rows = db.session.execute(text('SELECT username FROM users')).fetchall()
-            max_id_row = db.session.execute(text('SELECT MAX(user_id) FROM user_ids')).fetchone()
-            next_id = (max_id_row[0] or 0) + 1
-            
-            for r in rows:
-                un = r[0]
-                exists = db.session.execute(text('SELECT 1 FROM user_ids WHERE username = :u'), {"u": un}).fetchone()
-                if not exists:
-                    db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id)'), {"u": un, "id": next_id})
-                    next_id += 1
-            db.session.commit()
-        except Exception as e:
-            print(f"Backfill error: {e}")
-            db.session.rollback()
-
-_backfill_user_ids()
+            print("DB Initialized")
+        except Exception as e: print(f"DB Init Failed: {e}")
 
 def create_admin_if_not_exists():
     with app.app_context():
         try:
-            row = db.session.execute(text('SELECT username, data FROM users WHERE username = :u'), {"u": 'Paramen42'}).fetchone()
-            if not row:
-                pw_hash = generate_password_hash('admin123')
-                initial_data = {
-                    "username": "Paramen42",
-                    "money": 0,
-                    "level": 1,
-                    "xp": 0,
-                    "inventory": {},
-                    "factories": {},
-                    "is_admin": True,
-                    "last_active": time.time()
-                }
-                db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
-                             {"u": 'Paramen42', "p": pw_hash, "d": json.dumps(initial_data)})
-                
-                max_id_row = db.session.execute(text('SELECT MAX(user_id) FROM user_ids')).fetchone()
-                next_id = (max_id_row[0] or 0) + 1
-                db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id)'), {"u": 'Paramen42', "id": next_id})
+            admin = User.query.filter_by(username='Paramen42').first()
+            if not admin:
+                data = {"username": "Paramen42", "money": 1000000, "level": 100, "xp": 0, "inventory": {}, "factories": {}, "is_admin": True}
+                new_admin = User(username='Paramen42', password_hash=generate_password_hash('admin123'), data=json.dumps(data))
+                db.session.add(new_admin)
                 db.session.commit()
-        except Exception:
-            db.session.rollback()
-
-create_admin_if_not_exists()
-
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    try:
-        db.session.remove()
-        if app.config.get('SQLALCHEMY_ENGINE_OPTIONS', {}).get('poolclass') == sqlalchemy.pool.NullPool:
-            db.engine.dispose()
-    except Exception:
-        pass
-
-@app.after_request
-def cleanup_connections(response):
-    try:
-        db.session.remove()
-    except Exception:
-        pass
-    return response
+                print("Admin Created")
+        except Exception: db.session.rollback()
 
 # ---------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------
 
-def _normalize_username(username: str) -> str:
-    if username is None:
-        return ""
-    return str(username).strip()
-
-def _find_username_ci(username: str):
-    uname = _normalize_username(username)
-    if not uname:
-        return None
-    try:
-        # Use db.session.execute for safety
-        row = db.session.execute(text('SELECT username FROM users WHERE LOWER(username) = LOWER(:u) LIMIT 1'), {"u": uname}).fetchone()
-        if row:
-            db.session.commit() # Release the transaction
-            return row[0]
-        return None
-    except Exception:
-        db.session.rollback()
-        return None
-    finally:
-        db.session.remove()
-
 class _DictRow:
     def __init__(self, mapping):
         self._d = dict(mapping)
-    def __getitem__(self, k):
-        return self._d[k]
-    def get(self, k, default=None):
-        return self._d.get(k, default)
-    def keys(self):
-        return self._d.keys()
-    def items(self):
-        return self._d.items()
-    def __iter__(self):
-        return iter(self._d)
-    def __len__(self):
-        return len(self._d)
+    def __getitem__(self, k): return self._d[k]
+    def get(self, k, d=None): return self._d.get(k, d)
+    def keys(self): return self._d.keys()
+    def items(self): return self._d.items()
+    def __iter__(self): return iter(self._d)
 
 class _SAResultWrapper:
-    def __init__(self, result):
+    def __init__(self, res):
         self._rows = []
-        if result is None:
-            return
-        try:
-            # IMMEDIATELY fetch all to release the connection back to the NullPool
-            rows = result.fetchall()
-            for r in rows:
-                mapping = getattr(r, "_mapping", None)
-                if mapping is not None:
-                    self._rows.append(_DictRow(mapping))
-                else:
-                    try:
-                        self._rows.append(_DictRow(dict(r)))
-                    except Exception:
-                        try:
-                            self._rows.append(_DictRow({k: v for k, v in r.items()}))
-                        except Exception:
-                            pass
-        except Exception as e:
-            print(f"Result Wrapper Error: {e}")
-        finally:
-            try:
-                # Explicitly close the result set
-                result.close()
-            except Exception:
-                pass
-    def fetchall(self):
-        return list(self._rows)
-    def fetchone(self):
-        return self._rows[0] if self._rows else None
-
-def _convert_qmarks(sql: str, params):
-    if not params:
-        return sql, {}
-    out = []
-    bind = {}
-    idx = 0
-    for ch in sql:
-        if ch == '?':
-            key = f"p{idx}"
-            out.append(f":{key}")
-            bind[key] = params[idx]
-            idx += 1
-        else:
-            out.append(ch)
-    return "".join(out), bind
+        if res:
+            for r in res.fetchall():
+                m = getattr(r, "_mapping", None)
+                self._rows.append(_DictRow(m if m is not None else dict(r)))
+            res.close()
+    def fetchall(self): return self._rows
+    def fetchone(self): return self._rows[0] if self._rows else None
 
 class _SAConnection:
-    def __init__(self, session):
-        self._session = session
-        self._closed = False
-    def cursor(self):
-        return self
+    def __init__(self, session): self._session = session
+    def cursor(self): return self
     def execute(self, sql, params=()):
         if isinstance(params, (list, tuple)):
-            sql_conv, bind = _convert_qmarks(sql, params)
-        elif isinstance(params, dict):
-            sql_conv, bind = sql, params
-        else:
-            sql_conv, bind = sql, {}
+            out, bind, idx = [], {}, 0
+            for ch in sql:
+                if ch == '?':
+                    key = f"p{idx}"; out.append(f":{key}"); bind[key] = params[idx]; idx += 1
+                else: out.append(ch)
+            sql, params = "".join(out), bind
         try:
-            res = self._session.execute(text(sql_conv), bind)
-            # Auto-commit for write operations to maintain legacy behavior
-            stmt = str(sql_conv).lstrip().upper()
-            if stmt.startswith(("INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "REPLACE")):
-                self._session.commit()
+            res = self._session.execute(text(sql), params)
+            if sql.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE")): self._session.commit()
             return _SAResultWrapper(res)
-        except Exception as e:
-            print(f"DB Error: {e}")
+        except Exception:
+            self._session.rollback()
             return _SAResultWrapper(None)
     def commit(self):
-        try:
-            self._session.commit()
-        except Exception:
-            pass
-    def close(self):
-        # We don't close the session here, it's handled by teardown_appcontext
-        self._closed = True
-    def __enter__(self):
-        return self
-    def __exit__(self, exc_type, exc, tb):
-        pass # Handled by teardown
-    def __del__(self):
-        pass
+        try: self._session.commit()
+        except Exception: pass
+    def close(self): pass
+    def __enter__(self): return self
+    def __exit__(self, et, e, tb): pass
 
-def get_db_connection():
-    # Use the scoped session instead of opening new engine connections
-    return _SAConnection(db.session):
-    with app.app_context():
-        try:
-            row = db.session.execute(text('SELECT username, data FROM users WHERE username = :u'), {"u": 'Paramen42'}).fetchone()
-            if not row:
-                pw_hash = generate_password_hash('admin123')
-                initial_data = {
-                    "username": "Paramen42",
-                    "money": 0,
-                    "level": 1,
-                    "xp": 0,
-                    "inventory": {},
-                    "factories": {},
-                    "is_admin": True,
-                    "last_active": time.time()
-                }
-                db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
-                             {"u": 'Paramen42', "p": pw_hash, "d": json.dumps(initial_data)})
-                
-                max_id_row = db.session.execute(text('SELECT MAX(user_id) FROM user_ids')).fetchone()
-                next_id = (max_id_row[0] or 0) + 1
-                db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id)'), {"u": 'Paramen42', "id": next_id})
-                db.session.commit()
-                print("Admin user created.")
-        except Exception as e:
-            print(f"Admin creation error: {e}")
-            db.session.rollback()
+def get_db_connection(): return _SAConnection(db.session)
 
-create_admin_if_not_exists()
- 
-# Auto user creation removed to prevent test/default seeding
- 
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db.session.remove()
+    if app.config.get('SQLALCHEMY_ENGINE_OPTIONS', {}).get('poolclass') == NullPool:
+        db.engine.dispose()
+
+@app.after_request
+def cleanup(resp):
+    db.session.remove()
+    return resp
+
 # ---------------------------------------------------------
 # GLOBAL EVENT SYSTEM
 # ---------------------------------------------------------
@@ -2770,6 +2585,8 @@ def shutdown_session(exception=None):
     db.session.remove()
 
 if __name__ == '__main__':
-    init_db()
+    with app.app_context():
+        init_db()
+        create_admin_if_not_exists()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
