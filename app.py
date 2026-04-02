@@ -164,9 +164,31 @@ def backup_database():
         with open(ts_file, "w") as f: f.write(str(time.time()))
     except Exception: pass
 
+def seed_db():
+    with app.app_context():
+        try:
+            # Seed prices if empty
+            row = db.session.execute(text('SELECT COUNT(*) FROM prices')).fetchone()
+            if row and row[0] == 0:
+                items = [
+                    ("Odun", 50), ("Taş", 40), ("Demir", 120), ("Kömür", 80),
+                    ("Çelik", 300), ("Plastik", 250), ("Elektronik", 1000), 
+                    ("Gıda", 30), ("Tekstil", 60), ("Altın", 5000), ("Buğday", 20)
+                ]
+                now = time.time()
+                for name, price in items:
+                    db.session.execute(text('INSERT INTO prices (item, price, last_change, updated_at) VALUES (:i, :p, 0, :t)'),
+                                 {"i": name, "p": price, "t": now})
+                db.session.commit()
+                print("Prices Seeded")
+        except Exception as e:
+            print(f"Seeding failed: {e}")
+            db.session.rollback()
+
 def init_db():
     with app.app_context():
         try:
+            db.reflect()
             db.create_all()
             restore_database_if_needed()
             with db.engine.connect() as conn:
@@ -187,7 +209,9 @@ def init_db():
                     conn.execute(text(sql))
                 conn.commit()
             print("DB Initialized")
-        except Exception as e: print(f"DB Init Failed: {e}")
+            seed_db()
+        except Exception as e: 
+            print(f"DB Init Failed: {str(e)}")
 
 def create_admin_if_not_exists():
     with app.app_context():
@@ -281,8 +305,12 @@ def _get_current_event():
         return None
 
 def _set_current_event(ev):
+    is_pg = db.engine.dialect.name == 'postgresql'
     conn = get_db_connection()
-    conn.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES ('current_event', ?)", (json.dumps(ev),))
+    if is_pg:
+        conn.execute("INSERT INTO system_state (key, value) VALUES ('current_event', :v) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", {"v": json.dumps(ev)})
+    else:
+        conn.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES ('current_event', ?)", (json.dumps(ev),))
     conn.commit()
     conn.close()
 
@@ -466,20 +494,32 @@ def create_user(username, password):
     }
     
     try:
-        db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
-                     {"u": username, "p": pw_hash, "d": json.dumps(initial_data)})
-        # assign stable user_id
-        row = db.session.execute(text('SELECT MAX(user_id) AS m FROM user_ids')).fetchone()
-        next_id = int(row[0]) + 1 if row and row[0] is not None else 1
-        db.session.execute(text('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (:u, :id)'), 
-                     {"u": username, "id": next_id})
-        db.session.execute(text('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (:id, :a, :am, :t)'), 
-                     {"id": next_id, "a": 'register', "am": 0, "t": time.time()})
-        db.session.commit()
-        backup_database()
-        return True
+        with lock:
+            db.session.execute(text('INSERT INTO users (username, password_hash, data) VALUES (:u, :p, :d)'),
+                         {"u": username, "p": pw_hash, "d": json.dumps(initial_data)})
+            # assign stable user_id
+            res = db.session.execute(text('SELECT MAX(user_id) AS m FROM user_ids'))
+            row = res.fetchone()
+            next_id = 1
+            if row and row[0] is not None:
+                next_id = int(row[0]) + 1
+            
+            # Cross-dialect upsert for user_ids
+            is_pg = db.engine.dialect.name == 'postgresql'
+            if is_pg:
+                db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id) ON CONFLICT (username) DO UPDATE SET user_id = EXCLUDED.user_id'), 
+                             {"u": username, "id": next_id})
+            else:
+                db.session.execute(text('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (:u, :id)'), 
+                             {"u": username, "id": next_id})
+            
+            db.session.execute(text('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (:id, :a, :am, :t)'), 
+                         {"id": next_id, "a": 'register', "am": 0, "t": time.time()})
+            db.session.commit()
+            backup_database()
+            return True
     except Exception as e:
-        print(f"create_user error: {e}")
+        print(f"create_user error: {str(e)}")
         db.session.rollback()
         return False
     finally:
@@ -687,11 +727,15 @@ def register():
     if canonical:
         return jsonify({"success": False, "message": "Kullanıcı adı kullanımda"})
     
-    if create_user(username, password):
-        # Register başarılı olduğunda session set et ve yönlendir
-        session.permanent = True
-        session['user_id'] = username
-        return jsonify({"success": True, "message": "Kayıt başarılı! Hoş geldiniz.", "redirect": "/game"})
+    try:
+        if create_user(username, password):
+            # Register başarılı olduğunda session set et ve yönlendir
+            session.permanent = True
+            session['user_id'] = username
+            return jsonify({"success": True, "message": "Kayıt başarılı! Hoş geldiniz.", "redirect": "/game"})
+    except Exception as e:
+        print(f"Register route error: {str(e)}")
+        
     return jsonify({"success": False, "message": "Kayıt sırasında teknik bir hata oluştu"})
 
 @app.route('/logout')
@@ -2584,9 +2628,14 @@ _wrap_routes_with_session_cleanup()
 def shutdown_session(exception=None):
     db.session.remove()
 
-if __name__ == '__main__':
+# Initial startup tasks for both dev and prod (Gunicorn/Render)
+try:
     with app.app_context():
         init_db()
         create_admin_if_not_exists()
+except Exception as e:
+    print(f"Startup initialization failed: {e}")
+
+if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
