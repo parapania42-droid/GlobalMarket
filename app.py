@@ -82,6 +82,16 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 
 db.init_app(app)
 
+# VERİTABANI TAM SIFIRLAMA - HER BAŞLADIĞINDA
+with app.app_context():
+    try:
+        print("VERİTABANI SIFIRLANIYOR...")
+        db.drop_all()
+        db.create_all()
+        print("VERİTABANI BAŞARIYLA SIFIRLANDI VE TABLOLAR OLUŞTURULDU")
+    except Exception as e:
+        print(f"VERİTABANI SIFIRLAMA HATASI: {str(e)}")
+
 # FORCE DATABASE TABLES CREATION (RESET)
 with app.app_context():
     try:
