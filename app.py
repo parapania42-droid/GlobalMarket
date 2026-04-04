@@ -82,25 +82,16 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 
 db.init_app(app)
 
-# VERİTABANI TAM SIFIRLAMA - HER BAŞLADIĞINDA
+# VERİTABANI TAM SIFIRLAMA - TERTTEMİZ BAŞLANGIÇ
 with app.app_context():
     try:
-        print("VERİTABANI SIFIRLANIYOR...")
+        print("VERİTABANI TAMAMEN SIFIRLANIYOR...")
         db.drop_all()
         db.create_all()
-        print("VERİTABANI BAŞARIYLA SIFIRLANDI VE TABLOLAR OLUŞTURULDU")
+        print("VERİTABANI SIFIRLANDI VE TABLOLAR OLUŞTURULDU")
     except Exception as e:
-        print(f"VERİTABANI SIFIRLAMA HATASI: {str(e)}")
-
-# FORCE DATABASE TABLES CREATION (RESET)
-with app.app_context():
-    try:
-        db.reflect()
-        db.drop_all()
-        db.create_all()
-        print("DATABASE RESET AND TABLES CREATED SUCCESSFULLY")
-    except Exception as e:
-        print(f"CRITICAL DB RESET ERROR: {str(e)}")
+        print(f"VERİTABANI SIFIRLAMA HATASI: {e}")
+        # Hata olsa bile devam et
 
 # Concurrency lock
 lock = threading.Lock()
@@ -678,6 +669,25 @@ def load_logged_in_user():
         else:
             session.clear()
 
+@app.context_processor
+def inject_user():
+    """Tüm şablonlara kullanıcı bilgilerini otomatik gönder"""
+    if 'user_id' in session and g.user:
+        return {
+            'current_user': g.user,
+            'username': g.user.get('username', ''),
+            'money': g.user.get('money', 0),
+            'level': g.user.get('level', 1),
+            'is_authenticated': True
+        }
+    return {
+        'current_user': None,
+        'username': None,
+        'money': 0,
+        'level': 1,
+        'is_authenticated': False
+    }
+
 @app.route('/api/user/me')
 def api_user_me():
     if 'user_id' not in session:
@@ -828,11 +838,19 @@ def game():
 
 @app.route('/leaderboard')
 def leaderboard_page():
-    return render_template('leaderboard.html', active_page='leaderboard')
+    try:
+        return render_template('leaderboard.html', active_page='leaderboard')
+    except Exception as e:
+        print(f"Leaderboard route error: {str(e)}")
+        return redirect(url_for('game'))
 
 @app.route('/guide')
 def guide_page():
-    return render_template('guide.html', active_page='guide')
+    try:
+        return render_template('guide.html', active_page='guide')
+    except Exception as e:
+        print(f"Guide route error: {str(e)}")
+        return redirect(url_for('game'))
 
 @app.route('/market')
 def market_page():
@@ -850,24 +868,42 @@ def market_page():
     
 @app.route('/marketplace')
 def marketplace_page():
-    return render_template('marketplace.html', active_page='market')
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    u = get_user(session['user_id'])
+    if not u:
+        return redirect(url_for('login_page'))
+    return render_template('marketplace.html', active_page='market', username=u['username'])
 
 @app.route('/factory')
 def factory_page():
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    u = get_user(session['user_id'])
+    if not u:
+        return redirect(url_for('login_page'))
     # Mock factory options for demonstration
     available_factories = [
         {"id": "solar", "name": "Güneş Paneli", "cost": 5000, "rate": 2, "icon": "☀️"},
         {"id": "iron_mine", "name": "Demir Madeni", "cost": 2000, "rate": 3, "icon": "⛏️"}
     ]
-    return render_template('factory.html', active_page='factory', factories=available_factories)
+    return render_template('factory.html', active_page='factory', factories=available_factories, username=u['username'])
 
 @app.route('/resources')
 def resources_page():
-    return render_template('resources.html', active_page='resources')
+    try:
+        return render_template('resources.html', active_page='resources')
+    except Exception as e:
+        print(f"Resources route error: {str(e)}")
+        return redirect(url_for('game'))
 
 @app.route('/land')
 def land_page():
-    return render_template('land.html', active_page='land')
+    try:
+        return render_template('land.html', active_page='land')
+    except Exception as e:
+        print(f"Land route error: {str(e)}")
+        return redirect(url_for('game'))
 
 @app.route('/inventory')
 def inventory_page():
@@ -877,22 +913,34 @@ def inventory_page():
         u = get_user(session['user_id'])
         if not u:
             return redirect(url_for('login_page'))
-        return render_template('inventory.html', active_page='inventory', inventory=u.get('inventory', {}))
+        return render_template('inventory.html', active_page='inventory', inventory=u.get('inventory', {}), username=u['username'])
     except Exception as e:
         print(f"Inventory route error: {str(e)}")
         return redirect(url_for('game'))
 
 @app.route('/logistics')
 def logistics_page():
-    return render_template('logistics.html', active_page='logistics')
+    try:
+        return render_template('logistics.html', active_page='logistics')
+    except Exception as e:
+        print(f"Logistics route error: {str(e)}")
+        return redirect(url_for('game'))
 
 @app.route('/workers')
 def workers_page():
-    return render_template('workers.html', active_page='workers')
+    try:
+        return render_template('workers.html', active_page='workers')
+    except Exception as e:
+        print(f"Workers route error: {str(e)}")
+        return redirect(url_for('game'))
 
 @app.route('/realestate')
 def realestate_page():
-    return render_template('realestate.html', active_page='realestate')
+    try:
+        return render_template('realestate.html', active_page='realestate')
+    except Exception as e:
+        print(f"Realestate route error: {str(e)}")
+        return redirect(url_for('game'))
 
 # ---------------------------------------------------------
 # MARKETPLACE API
@@ -2704,6 +2752,23 @@ _wrap_routes_with_session_cleanup()
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db.session.remove()
+
+@app.errorhandler(500)
+def internal_error(error):
+    """500 hatası olduğunda uygulamanın çökmesini engelle"""
+    print(f"500 Internal Server Error: {error}")
+    return "Bir hata oluştu ama uygulama hala ayakta!", 500
+
+@app.errorhandler(404)
+def not_found_error(error):
+    """404 hatası yönlendirme"""
+    return redirect(url_for('game'))
+
+@app.errorhandler(Exception)
+def handle_exception(error):
+    """Genel exception handler"""
+    print(f"Unhandled Exception: {error}")
+    return "Bir hata oluştu ama uygulama hala ayakta!", 500
 
 # Initial startup tasks for both dev and prod (Gunicorn/Render)
 try:
