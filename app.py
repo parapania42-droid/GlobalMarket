@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import json
 import random
@@ -54,44 +55,25 @@ def _find_username_ci(username: str):
     except Exception: return None
 
 # ---------------------------------------------------------
-# DATABASE CONFIGURATION
+# DATABASE CONFIGURATION - SQLITE FOR STABILITY
 # ---------------------------------------------------------
 
 db = SQLAlchemy()
 
-def _normalize_db_url(url: str) -> str:
-    if not url: return url
-    if url.startswith("postgres://"): url = url.replace("postgres://", "postgresql://", 1)
-    if "sslmode=" not in url:
-        sep = "&" if "?" in url else "?"
-        url += f"{sep}sslmode=require"
-    return url
-
-db_url = os.environ.get("DATABASE_URL", "").strip()
-app.config['SQLALCHEMY_DATABASE_URI'] = _normalize_db_url(db_url) or f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
+# Her zaman SQLite kullan - problemsiz
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# FORCE NullPool for Render
+# SQLite için basit ayarlar
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "poolclass": NullPool,
-    "connect_args": {
-        "sslmode": "require",
-        "connect_timeout": 10
-    }
+    "pool_pre_ping": True,
+    "pool_recycle": 300
 }
 
 db.init_app(app)
 
-# VERİTABANI TAM SIFIRLAMA - TERTTEMİZ BAŞLANGIÇ
-with app.app_context():
-    try:
-        print("VERİTABANI TAMAMEN SIFIRLANIYOR...")
-        db.drop_all()
-        db.create_all()
-        print("VERİTABANI SIFIRLANDI VE TABLOLAR OLUŞTURULDU")
-    except Exception as e:
-        print(f"VERİTABANI SIFIRLAMA HATASI: {e}")
-        # Hata olsa bile devam et
+# VERİTABANI BAŞLATILACAK - init_db içinde sıfırlanacak
+# Not: Tam sıfırlama init_db() fonksiyonunda yapılıyor
 
 # Concurrency lock
 lock = threading.Lock()
@@ -200,32 +182,39 @@ def seed_db():
 def init_db():
     with app.app_context():
         try:
-            db.reflect()
-            # FULL RESET AS REQUESTED
-            db.drop_all()
-            db.create_all()
+            print("🔄 VERİTABANI TAMAMEN SIFIRLANIYOR (SQLite)...")
             
-            with db.engine.connect() as conn:
-                is_pg = db.engine.dialect.name == 'postgresql'
-                serial_type = "SERIAL" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
-                for sql in [
-                    f"CREATE TABLE IF NOT EXISTS user_ids (username TEXT PRIMARY KEY, user_id INTEGER UNIQUE)",
-                    f"CREATE TABLE IF NOT EXISTS user_logs (id {serial_type}, user_id INTEGER, action TEXT, amount REAL, timestamp REAL)",
-                    f"CREATE TABLE IF NOT EXISTS market (id {serial_type}, satici TEXT, item TEXT, adet INTEGER, fiyat INTEGER, time REAL)",
-                    f"CREATE TABLE IF NOT EXISTS chat (id {serial_type}, username TEXT, message TEXT, time TEXT)",
-                    f"CREATE TABLE IF NOT EXISTS prices (item TEXT PRIMARY KEY, price REAL NOT NULL, last_change REAL NOT NULL, updated_at REAL NOT NULL)",
-                    f"CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-                    f"CREATE TABLE IF NOT EXISTS factory_assignments (id {serial_type}, owner TEXT NOT NULL, factory_type TEXT NOT NULL, count INTEGER NOT NULL, created_at REAL NOT NULL)",
-                    f"CREATE TABLE IF NOT EXISTS vehicles (id {serial_type}, owner TEXT NOT NULL, type TEXT NOT NULL, capacity INTEGER NOT NULL, created_at REAL NOT NULL)",
-                    f"CREATE TABLE IF NOT EXISTS logistics_tasks (id {serial_type}, owner TEXT NOT NULL, vehicle_id INTEGER NOT NULL, item TEXT NOT NULL, amount INTEGER NOT NULL, destination TEXT NOT NULL, city_scope TEXT NOT NULL, eta REAL NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL)",
-                    f"CREATE TABLE IF NOT EXISTS transactions (id {serial_type}, owner TEXT NOT NULL, type TEXT NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER, description TEXT, time REAL NOT NULL, meta TEXT)"
-                ]:
-                    conn.execute(text(sql))
-                conn.commit()
-            print("DB Initialized and Reset")
+            # SQLite için basit sıfırlama - transaction olmadan
+            db.drop_all()
+            print("🗑️ SQLAlchemy tabloları silindi")
+            
+            db.create_all()
+            print("✅ SQLAlchemy tabloları oluşturuldu")
+            
+            # Manuel tabloları oluştur - transaction olmadan
+            for sql in [
+                "CREATE TABLE IF NOT EXISTS user_ids (username TEXT PRIMARY KEY, user_id INTEGER UNIQUE)",
+                "CREATE TABLE IF NOT EXISTS user_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT, amount REAL, timestamp REAL)",
+                "CREATE TABLE IF NOT EXISTS market (id INTEGER PRIMARY KEY AUTOINCREMENT, satici TEXT, item TEXT, adet INTEGER, fiyat INTEGER, time REAL)",
+                "CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, message TEXT, time TEXT)",
+                "CREATE TABLE IF NOT EXISTS prices (item TEXT PRIMARY KEY, price REAL NOT NULL, last_change REAL NOT NULL, updated_at REAL NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS factory_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, factory_type TEXT NOT NULL, count INTEGER NOT NULL, created_at REAL NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS vehicles (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, type TEXT NOT NULL, capacity INTEGER NOT NULL, created_at REAL NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS logistics_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, vehicle_id INTEGER NOT NULL, item TEXT NOT NULL, amount INTEGER NOT NULL, destination TEXT NOT NULL, city_scope TEXT NOT NULL, eta REAL NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, type TEXT NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER, description TEXT, time REAL NOT NULL, meta TEXT)"
+            ]:
+                try:
+                    db.session.execute(text(sql))
+                    print(f"✅ Tablo hazır: {sql.split('(')[0].replace('CREATE TABLE IF NOT EXISTS ', '')}")
+                except Exception as table_error:
+                    print(f"⚠️ Tablo zaten var: {table_error}")
+            
+            print("🎉 VERİTABANI SIFIRLANDI VE HAZIR (SQLite)")
             seed_db()
         except Exception as e: 
-            print(f"DB Init Failed: {str(e)}")
+            print(f"❌ DB Init Failed: {str(e)}")
+            # Transaction olmadan devam et
 
 def create_admin_if_not_exists():
     with app.app_context():
@@ -237,7 +226,9 @@ def create_admin_if_not_exists():
                 db.session.add(new_admin)
                 db.session.commit()
                 print("Admin Created")
-        except Exception: db.session.rollback()
+        except Exception as e:
+            print(f"Admin creation failed: {e}")
+            # Transaction olmadan devam et
 
 # ---------------------------------------------------------
 # HELPERS
@@ -516,35 +507,38 @@ def create_user(username, password):
     
     try:
         with lock:
-            db.session.execute(text('INSERT INTO users (username, password_hash, data, is_admin) VALUES (:u, :p, :d, :a)'),
-                         {"u": username, "p": pw_hash, "d": json.dumps(initial_data), "a": is_admin})
-            # assign stable user_id
-            res = db.session.execute(text('SELECT MAX(user_id) AS m FROM user_ids'))
-            row = res.fetchone()
-            next_id = 1
-            if row and row[0] is not None:
-                next_id = int(row[0]) + 1
-            
-            # Cross-dialect upsert for user_ids
-            is_pg = db.engine.dialect.name == 'postgresql'
-            if is_pg:
-                db.session.execute(text('INSERT INTO user_ids (username, user_id) VALUES (:u, :id) ON CONFLICT (username) DO UPDATE SET user_id = EXCLUDED.user_id'), 
+            # Tamamen raw SQL ile - SQLAlchemy session olmadan
+            engine = db.engine
+            with engine.connect() as conn:
+                # Kullanıcı ekle
+                conn.execute(text('INSERT INTO users (username, password_hash, data, is_admin) VALUES (:u, :p, :d, :a)'),
+                             {"u": username, "p": pw_hash, "d": json.dumps(initial_data), "a": is_admin})
+                
+                # User ID ata
+                res = conn.execute(text('SELECT MAX(user_id) AS m FROM user_ids'))
+                row = res.fetchone()
+                next_id = 1
+                if row and row[0] is not None:
+                    next_id = int(row[0]) + 1
+                
+                # User IDs tablosuna ekle
+                conn.execute(text('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (:u, :id)'), 
                              {"u": username, "id": next_id})
-            else:
-                db.session.execute(text('INSERT OR REPLACE INTO user_ids (username, user_id) VALUES (:u, :id)'), 
-                             {"u": username, "id": next_id})
-            
-            db.session.execute(text('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (:id, :a, :am, :t)'), 
-                         {"id": next_id, "a": 'register', "am": 0, "t": time.time()})
-            db.session.commit()
+                
+                # Log ekle
+                conn.execute(text('INSERT INTO user_logs (user_id, action, amount, timestamp) VALUES (:id, :a, :am, :t)'), 
+                             {"id": next_id, "a": 'register', "am": 0, "t": time.time()})
+                
+                conn.commit()
+                conn.close()
+                
+            print(f"✅ Kullanıcı başarıyla oluşturuldu: {username}")
             backup_database()
             return True
+            
     except Exception as e:
         print(f"HATA: create_user error: {str(e)}")
-        db.session.rollback()
         return False
-    finally:
-        db.session.remove()
 
 # ---------------------------------------------------------
 # USER ID & LOG HELPERS
@@ -2771,13 +2765,29 @@ def handle_exception(error):
     return "Bir hata oluştu ama uygulama hala ayakta!", 500
 
 # Initial startup tasks for both dev and prod (Gunicorn/Render)
+print("=== UYGULAMA BAŞLATILIYOR ===")
+print(f"Python Version: {sys.version}")
+print(f"Working Directory: {os.getcwd()}")
+
 try:
+    print("Environment Variables:")
+    print(f"  DATABASE_URL: {os.environ.get('DATABASE_URL', 'BULUNAMADI')[:50]}...")
+    print(f"  PORT: {os.environ.get('PORT', '5000')}")
+    print(f"  FLASK_ENV: {os.environ.get('FLASK_ENV', 'development')}")
+    
     with app.app_context():
+        print("Veritabanı başlatılıyor...")
         init_db()
+        print("Admin kullanıcısı kontrol ediliyor...")
         create_admin_if_not_exists()
+        print("=== UYGULAMA BAŞARILIYLA BAŞLATILDI ===")
 except Exception as e:
-    print(f"Startup initialization failed: {e}")
+    print(f"!!! Startup initialization failed: {e}")
+    import traceback
+    traceback.print_exc()
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    # Debug modu geçici olarak açık - hata mesajlarını görmek için
+    debug_mode = os.environ.get("FLASK_ENV") != "production"
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
