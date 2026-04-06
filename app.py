@@ -183,25 +183,25 @@ def init_db():
         try:
             print("🔄 VERİTABANI TAMAMEN SIFIRLANIYOR...")
             
-            # PostgreSQL için sıfırlama
+            # PostgreSQL için sıfırlama - önce her şeyi temizle
             db.drop_all()
             print("🗑️ Tüm tablolar silindi")
             
             db.create_all()
-            print("✅ Yeni tablolar oluşturuldu")
+            print("✅ SQLAlchemy tabloları oluşturuldu")
             
-            # Manuel tabloları oluştur
+            # PostgreSQL uyumlu tablolar oluştur
             for sql in [
                 "CREATE TABLE IF NOT EXISTS user_ids (username TEXT PRIMARY KEY, user_id INTEGER UNIQUE)",
-                "CREATE TABLE IF NOT EXISTS user_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT, amount REAL, timestamp REAL)",
-                "CREATE TABLE IF NOT EXISTS market (id INTEGER PRIMARY KEY AUTOINCREMENT, satici TEXT, item TEXT, adet INTEGER, fiyat INTEGER, time REAL)",
-                "CREATE TABLE IF NOT EXISTS chat (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, message TEXT, time TEXT)",
+                "CREATE TABLE IF NOT EXISTS user_logs (id SERIAL PRIMARY KEY, user_id INTEGER, action TEXT, amount REAL, timestamp REAL)",
+                "CREATE TABLE IF NOT EXISTS market (id SERIAL PRIMARY KEY, satici TEXT, item TEXT, adet INTEGER, fiyat INTEGER, time REAL)",
+                "CREATE TABLE IF NOT EXISTS chat (id SERIAL PRIMARY KEY, username TEXT, message TEXT, time TEXT)",
                 "CREATE TABLE IF NOT EXISTS prices (item TEXT PRIMARY KEY, price REAL NOT NULL, last_change REAL NOT NULL, updated_at REAL NOT NULL)",
                 "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-                "CREATE TABLE IF NOT EXISTS factory_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, factory_type TEXT NOT NULL, count INTEGER NOT NULL, created_at REAL NOT NULL)",
-                "CREATE TABLE IF NOT EXISTS vehicles (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, type TEXT NOT NULL, capacity INTEGER NOT NULL, created_at REAL NOT NULL)",
-                "CREATE TABLE IF NOT EXISTS logistics_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, vehicle_id INTEGER NOT NULL, item TEXT NOT NULL, amount INTEGER NOT NULL, destination TEXT NOT NULL, city_scope TEXT NOT NULL, eta REAL NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL)",
-                "CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, type TEXT NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER, description TEXT, time REAL NOT NULL, meta TEXT)"
+                "CREATE TABLE IF NOT EXISTS factory_assignments (id SERIAL PRIMARY KEY, owner TEXT NOT NULL, factory_type TEXT NOT NULL, count INTEGER NOT NULL, created_at REAL NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS vehicles (id SERIAL PRIMARY KEY, owner TEXT NOT NULL, type TEXT NOT NULL, capacity INTEGER NOT NULL, created_at REAL NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS logistics_tasks (id SERIAL PRIMARY KEY, owner TEXT NOT NULL, vehicle_id INTEGER NOT NULL, item TEXT NOT NULL, amount INTEGER NOT NULL, destination TEXT NOT NULL, city_scope TEXT NOT NULL, eta REAL NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, owner TEXT NOT NULL, type TEXT NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER, description TEXT, time REAL NOT NULL, meta TEXT)"
             ]:
                 try:
                     db.session.execute(text(sql))
@@ -209,7 +209,7 @@ def init_db():
                 except Exception as table_error:
                     print(f"⚠️ Tablo zaten var: {table_error}")
             
-            print("🎉 VERİTABANI SIFIRLANDI VE HAZIR")
+            print("🎉 VERİTABANI SIFIRLANDI VE HAZIR (PostgreSQL)")
             seed_db()
         except Exception as e: 
             print(f"❌ DB Init Failed: {str(e)}")
