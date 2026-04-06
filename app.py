@@ -60,13 +60,13 @@ def _find_username_ci(username: str):
 
 db = SQLAlchemy()
 
-# Render'daki DATABASE_URL'i al, eğer yoksa (lokaldeysek) mecburen sqlite kullan
+# Render'daki DATABASE_URL'i al ve PostgreSQL'e dönüştür
 database_url = os.getenv('DATABASE_URL')
 
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///test.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # PostgreSQL için ayarlar
@@ -188,16 +188,16 @@ def seed_db():
 def init_db():
     with app.app_context():
         try:
-            print("🔄 VERİTABANI TAMAMEN SIFIRLANIYOR (SQLite)...")
+            print("🔄 VERİTABANI TAMAMEN SIFIRLANIYOR...")
             
-            # SQLite için basit sıfırlama - transaction olmadan
+            # PostgreSQL için sıfırlama
             db.drop_all()
-            print("🗑️ SQLAlchemy tabloları silindi")
+            print("🗑️ Tüm tablolar silindi")
             
             db.create_all()
-            print("✅ SQLAlchemy tabloları oluşturuldu")
+            print("✅ Yeni tablolar oluşturuldu")
             
-            # Manuel tabloları oluştur - transaction olmadan
+            # Manuel tabloları oluştur
             for sql in [
                 "CREATE TABLE IF NOT EXISTS user_ids (username TEXT PRIMARY KEY, user_id INTEGER UNIQUE)",
                 "CREATE TABLE IF NOT EXISTS user_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT, amount REAL, timestamp REAL)",
@@ -216,7 +216,7 @@ def init_db():
                 except Exception as table_error:
                     print(f"⚠️ Tablo zaten var: {table_error}")
             
-            print("🎉 VERİTABANI SIFIRLANDI VE HAZIR (SQLite)")
+            print("🎉 VERİTABANI SIFIRLANDI VE HAZIR")
             seed_db()
         except Exception as e: 
             print(f"❌ DB Init Failed: {str(e)}")
