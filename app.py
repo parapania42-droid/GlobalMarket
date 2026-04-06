@@ -55,17 +55,23 @@ def _find_username_ci(username: str):
     except Exception: return None
 
 # ---------------------------------------------------------
-# DATABASE CONFIGURATION - SQLITE FOR STABILITY
+# DATABASE CONFIGURATION - POSTGRESQL FOR RENDER
 # ---------------------------------------------------------
 
 db = SQLAlchemy()
 
-# Her zaman SQLite kullan - problemsiz
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
+# Render'daki PostgreSQL DATABASE_URL kullan, yoksa hata ver
+database_url = os.getenv('DATABASE_URL')
+if not database_url:
+    print("HATA: DATABASE_URL environment variable bulunamadı!")
+    database_url = f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'globalmarket.db')}"
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# SQLite için basit ayarlar
+# PostgreSQL için ayarlar
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "poolclass": NullPool,
     "pool_pre_ping": True,
     "pool_recycle": 300
 }
