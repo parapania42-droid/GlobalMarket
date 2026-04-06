@@ -2786,6 +2786,12 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
+    @app.route('/bombala-beni-06')
+def veritabani_temizlik():
+    db.drop_all()
+    db.create_all()
+    return "BUM! Eski hesaplar uçtu. Şimdi gidip Paramen42 olarak kayıt olabilirsin!"
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     # Debug modu geçici olarak açık - hata mesajlarını görmek için
