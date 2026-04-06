@@ -2786,7 +2786,7 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
-    @app.route('/bombala-beni-06')
+@app.route('/bombala-beni-06')
 def veritabani_temizlik():
     db.drop_all()
     db.create_all()
