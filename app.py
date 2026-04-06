@@ -54,29 +54,22 @@ def _find_username_ci(username: str):
         return row[0] if row else None
     except Exception: return None
 
-# ---------------------------------------------------------
-# DATABASE CONFIGURATION - POSTGRESQL FOR RENDER
-# ---------------------------------------------------------
+import os
+from flask_sqlalchemy import SQLAlchemy
 
-db = SQLAlchemy()
-
-# Render'daki DATABASE_URL'i al ve PostgreSQL'e dönüştür
+# SQLite'ı tamamen yasakla, sadece Render'daki Postgres'e bağlan
 database_url = os.getenv('DATABASE_URL')
 
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
 
+if not database_url:
+    # Eğer link yoksa uygulama hata versin, sqlite açmasın
+    raise RuntimeError("HATA: DATABASE_URL BULUNAMADI!")
+
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# PostgreSQL için ayarlar
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "poolclass": NullPool,
-    "pool_pre_ping": True,
-    "pool_recycle": 300
-}
-
-db.init_app(app)
+db = SQLAlchemy(app)
 
 # VERİTABANI BAŞLATILACAK - init_db içinde sıfırlanacak
 # Not: Tam sıfırlama init_db() fonksiyonunda yapılıyor
