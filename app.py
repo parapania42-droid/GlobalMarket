@@ -2775,12 +2775,8 @@ try:
     print(f"  PORT: {os.environ.get('PORT', '5000')}")
     print(f"  FLASK_ENV: {os.environ.get('FLASK_ENV', 'development')}")
     
-    with app.app_context():
-        print("Veritabanı başlatılıyor...")
-        init_db()
-        print("Admin kullanıcısı kontrol ediliyor...")
-        create_admin_if_not_exists()
-        print("=== UYGULAMA BAŞARILIYLA BAŞLATILDI ===")
+    # init_db() cagrisini kaldir - uygulama cokmesin
+    print("=== UYGULAMA BAŞARILIYLA BAŞLATILDI ===")
 except Exception as e:
     print(f"!!! Startup initialization failed: {e}")
     import traceback
