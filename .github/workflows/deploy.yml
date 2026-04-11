@@ -11,35 +11,47 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Deploy to Hugging Face Space
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install huggingface_hub
+    
+    - name: Deploy to Hugging Face
       env:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
       run: |
-        pip install huggingface_hub
+        echo "Starting deployment to Paramen42/GlobalMarket..."
+        
+        # Basit deploy script
         python -c "
-        from huggingface_hub import HfApi, Repository
         import os
+        from huggingface_hub import HfApi
         
-        api = HfApi(token=os.environ['HF_TOKEN'])
-        
-        # Space bilgisi
-        repo_id = 'Paramen42/GlobalMarket'
-        
-        print(f'Deploying to {repo_id}...')
-        
-        # Repo'yu clone et
-        repo = Repository(
-            local_dir='.',
-            repo_type='space',
-            repo_id=repo_id,
-            token=os.environ['HF_TOKEN'],
-            clone_from=f'https://huggingface.co/spaces/{repo_id}'
-        )
-        
-        # Deiikliklikleri push et
-        repo.git_add(auto_lfs_track=True)
-        repo.git_commit(commit_message='Auto deploy from GitHub')
-        repo.git_push()
-        
-        print('Successfully deployed to Hugging Face!')
+        try:
+            api = HfApi(token=os.environ['HF_TOKEN'])
+            repo_id = 'Paramen42/GlobalMarket'
+            
+            print(f'Deploying to {repo_id}...')
+            
+            # Space var mi kontrol et
+            space_info = api.space_info(repo_id=repo_id)
+            print(f'Space found: {space_info.id}')
+            
+            # Dosyalari yukle
+            api.upload_folder(
+                folder_path='.',
+                repo_id=repo_id,
+                repo_type='space',
+                token=os.environ['HF_TOKEN']
+            )
+            
+            print('Deployment successful!')
+            
+        except Exception as e:
+            print(f'Error: {e}')
+            exit(1)
         "
