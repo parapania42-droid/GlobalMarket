@@ -64,8 +64,9 @@ if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
 
 if not database_url:
-    # Eğer link yoksa uygulama hata versin, sqlite açmasın
-    raise RuntimeError("HATA: DATABASE_URL BULUNAMADI!")
+    # Render'da çalışması için geçici SQLite
+    database_url = f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'render.db')}"
+    print("UYARI: DATABASE_URL yok, SQLite kullanılıyor")
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
