@@ -2787,9 +2787,13 @@ except Exception as e:
 
 @app.route('/bombala-beni-06')
 def veritabani_temizlik():
-    db.drop_all()
-    db.create_all()
-    return "BUM! Eski hesaplar uçtu. Şimdi gidip Paramen42 olarak kayıt olabilirsin!"
+    try:
+        with app.app_context():
+            db.drop_all()
+            db.create_all()
+        return "BUM! Eski hesaplar uçtu. Şimdi gidip Paramen42 olarak kayıt olabilirsin!"
+    except Exception as e:
+        return f"Hata: {str(e)}", 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
