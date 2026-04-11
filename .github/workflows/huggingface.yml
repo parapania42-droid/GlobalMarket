@@ -1,0 +1,51 @@
+name: Deploy to Hugging Face Spaces
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install huggingface_hub
+    
+    - name: Deploy to Hugging Face
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        SPACE_NAME: ${{ secrets.SPACE_NAME }}
+      run: |
+        python -c "
+        from huggingface_hub import HfApi, Repository
+        import os
+        
+        api = HfApi(token=os.environ['HF_TOKEN'])
+        
+        # Space bilgileri
+        repo_id = os.environ['SPACE_NAME']
+        
+        # Repo'yu clone et
+        repo = Repository(
+            local_dir='.',
+            repo_type='space',
+            repo_id=repo_id,
+            token=os.environ['HF_TOKEN'],
+            clone_from=f'https://huggingface.co/spaces/{repo_id}'
+        )
+        
+        # Deiikiklikleri push et
+        repo.git_add(auto_lfs_track=True)
+        repo.git_commit(commit_message='GitHub Action deploy')
+        repo.git_push()
+        print('Hugging Face deploy completed!')
+        "
