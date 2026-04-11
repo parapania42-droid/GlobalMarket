@@ -1,0 +1,45 @@
+name: Deploy to Hugging Face
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Hugging Face Space
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        pip install huggingface_hub
+        python -c "
+        from huggingface_hub import HfApi, Repository
+        import os
+        
+        api = HfApi(token=os.environ['HF_TOKEN'])
+        
+        # Space bilgisi
+        repo_id = 'Paramen42/GlobalMarket'
+        
+        print(f'Deploying to {repo_id}...')
+        
+        # Repo'yu clone et
+        repo = Repository(
+            local_dir='.',
+            repo_type='space',
+            repo_id=repo_id,
+            token=os.environ['HF_TOKEN'],
+            clone_from=f'https://huggingface.co/spaces/{repo_id}'
+        )
+        
+        # Deiikliklikleri push et
+        repo.git_add(auto_lfs_track=True)
+        repo.git_commit(commit_message='Auto deploy from GitHub')
+        repo.git_push()
+        
+        print('Successfully deployed to Hugging Face!')
+        "
