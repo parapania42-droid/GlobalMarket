@@ -2789,10 +2789,10 @@ except Exception as e:
 @app.route('/bombala-beni-06')
 def veritabani_temizlik():
     try:
-        with app.app_context():
-            db.drop_all()
-            db.create_all()
-        return "BUM! Eski hesaplar uçtu. Şimdi gidip Paramen42 olarak kayıt olabilirsin!"
+        # Basit temizlik - tüm tablolari sil
+        db.drop_all()
+        db.create_all()
+        return "TUM HESAPLAR SILINDI! Paramen42 olarak kayit ol!"
     except Exception as e:
         return f"Hata: {str(e)}", 500
 
