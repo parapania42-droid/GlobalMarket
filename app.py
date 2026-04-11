@@ -2782,6 +2782,31 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
+@app.route('/admin')
+def admin_panel():
+    try:
+        users = User.query.all()
+        user_list = []
+        for user in users:
+            data = json.loads(user.data) if user.data else {}
+            user_list.append({
+                'username': user.username,
+                'money': data.get('money', 0),
+                'level': data.get('level', 1),
+                'is_admin': data.get('is_admin', False)
+            })
+        return {'users': user_list, 'total': len(user_list)}
+    except Exception as e:
+        return f"Hata: {str(e)}", 500
+
+@app.route('/users')
+def list_users():
+    try:
+        users = User.query.all()
+        return render_template('users.html', users=users)
+    except:
+        return "Kullanici listesi yok", 404
+
 @app.route('/bombala-beni-06')
 def veritabani_temizlik():
     try:
