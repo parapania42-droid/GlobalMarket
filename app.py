@@ -2789,9 +2789,14 @@ except Exception as e:
 @app.route('/bombala-beni-06')
 def veritabani_temizlik():
     try:
-        # Basit temizlik - tüm tablolari sil
-        db.drop_all()
-        db.create_all()
+        # PostgreSQL transaction hatasi icin raw connection
+        engine = db.engine
+        with engine.connect() as conn:
+            conn.execute(text('DROP SCHEMA public CASCADE'))
+            conn.execute(text('CREATE SCHEMA public'))
+            conn.execute(text('GRANT ALL ON SCHEMA public TO postgres'))
+            conn.execute(text('GRANT ALL ON SCHEMA public TO public'))
+            conn.commit()
         return "TUM HESAPLAR SILINDI! Paramen42 olarak kayit ol!"
     except Exception as e:
         return f"Hata: {str(e)}", 500
