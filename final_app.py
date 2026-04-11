@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import os
 import sys
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from Flask import Flask, render_template, jsonify, request, session, redirect, url_for
 import json
 import time
 import threading
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_sqlalchemy import SQLAlchemy
+from Flask_SQLAlchemy import SQLAlchemy
 from sqlalchemy import text
 
 app = Flask(__name__)
