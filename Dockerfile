@@ -1,25 +1,20 @@
-FROM python:3.10-slim
+# 1. Python imajını çek
+FROM python:3.10
 
-# Sistem güncellemeleri
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# Çalışma dizini ayarla
+# 2. Çalışma dizini
 WORKDIR /app
 
-# Tüm dosyaları kopyala
+# 3. KÜTÜPHANELERİ TEK TEK VE ZORLA KUR
+# Eğer requirements.txt bozuksa bile bu komut Flask'ı zorla yükler
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir flask flask-sqlalchemy werkzeug gunicorn
+
+# 4. Tüm dosyaları kopyala
 COPY . .
 
-# Zorla tüm paketleri yükle
-RUN pip install --no-cache-dir --force-reinstall \
-    Flask \
-    Flask-SQLAlchemy \
-    werkzeug
-
-# Port 7860'i açıkla
+# 5. Hugging Face Port Ayarı
+ENV PORT=7860
 EXPOSE 7860
 
-# Hugging Face için host ayarı
-CMD ["python", "-u", "final_app.py"]
+# 6. Uygulamayı Gunicorn ile başlat (final_app.py dosyanı çalıştırır)
+CMD ["gunicorn", "--bind", "0.0.0.0:7860", "final_app:app"]
